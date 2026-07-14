@@ -10,3 +10,53 @@ body {
   background-color: #f3f4f6;
   font-family: sans-serif;
 }
+/* Estilos para el Login de Mobulaa */
+.login-page-bg {
+  background-color: #f4f4f4;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  background: #ffffff;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 400px;
+}
+
+.brand-logo {
+  max-width: 150px;
+  margin: 0 auto 20px;
+  display: block;
+}
+
+.input-mobulaa {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  outline: none;
+}
+
+.input-mobulaa:focus {
+  border-color: #1a0087; /* Azul marca */
+}
+
+.btn-mobulaa {
+  width: 100%;
+  background-color: #1a0087; /* Color principal */
+  color: #ffffff;
+  padding: 12px;
+  border-radius: 6px;
+  font-weight: bold;
+  transition: background 0.3s;
+}
+
+.btn-mobulaa:hover {
+  background-color: #232323; /* Color secundario[cite: 1] */
+}
