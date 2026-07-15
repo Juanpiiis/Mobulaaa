@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase/client'
+import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 export default function RegistroPage() {
@@ -8,32 +8,91 @@ export default function RegistroPage() {
   const [password, setPassword] = useState('')
   const [nombre, setNombre] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const supabase = createClient()
 
   const handleRegistro = async () => {
-    const { data, error } = await supabase.auth.signUp({ email, password })
-    if (error) return setError(error.message)
+    setError('')
+    setLoading(true)
 
-    await supabase.from('usuarios').insert({
-      id: data.user?.id,
-      nombre,
-      email,
-      rol: 'vendedor'
-    })
+    const { data, error: authError } = await supabase.auth.signUp({ email, password })
+    if (authError) {
+      setError(authError.message)
+      setLoading(false)
+      return
+    }
 
+    if (data.user) {
+      const { error: dbError } = await supabase.from('usuarios').insert({
+        id: data.user.id,
+        nombre,
+        email,
+        rol: 'vendedor'
+      })
+
+      if (dbError) {
+        setError('Error al guardar datos: ' + dbError.message)
+        setLoading(false)
+        return
+      }
+    }
     router.push('/vendedor')
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="bg-white p-8 rounded-lg shadow-md w-96">
-        <h1 className="text-2xl font-bold mb-6 text-center">Registro</h1>
-        {error && <p className="text-red-500 mb-4 text-sm">{error}</p>}
-        <input className="w-full border p-2 rounded mb-4" type="text" placeholder="Nombre completo" value={nombre} onChange={e => setNombre(e.target.value)} />
-        <input className="w-full border p-2 rounded mb-4" type="email" placeholder="Correo" value={email} onChange={e => setEmail(e.target.value)} />
-        <input className="w-full border p-2 rounded mb-4" type="password" placeholder="Contraseña" value={password} onChange={e => setPassword(e.target.value)} />
-        <button onClick={handleRegistro} className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700">Registrarse</button>
-        <p className="text-center mt-4 text-sm">¿Ya tienes cuenta? <a href="/login" className="text-blue-600">Inicia sesión</a></p>
+    <div className="login-page-bg">
+      <div className="login-card">
+        {/* Aquí puedes colocar el logo igual que en login */}
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+          <img 
+            src="/logo-mobulaa.png" 
+            alt="Logo Mobulaa" 
+            style={{ width: '200px', height: 'auto', display: 'inline-block' }} 
+          />
+        </div>
+
+        <h1 className="text-2xl font-bold mb-6 text-center" style={{ color: '#232323' }}>
+          Crear cuenta
+        </h1>
+
+        {error && <p className="text-red-500 mb-4 text-sm text-center">{error}</p>}
+
+        <input 
+          className="input-mobulaa" 
+          type="text" 
+          placeholder="Nombre completo" 
+          value={nombre} 
+          onChange={e => setNombre(e.target.value)} 
+        />
+        
+        <input 
+          className="input-mobulaa" 
+          type="email" 
+          placeholder="Correo" 
+          value={email} 
+          onChange={e => setEmail(e.target.value)} 
+        />
+        
+        <input 
+          className="input-mobulaa" 
+          type="password" 
+          placeholder="Contraseña" 
+          value={password} 
+          onChange={e => setPassword(e.target.value)} 
+        />
+
+        <button 
+          onClick={handleRegistro} 
+          disabled={loading}
+          className="btn-mobulaa"
+        >
+          {loading ? 'Registrando...' : 'Registrarse'}
+        </button>
+
+        <p className="text-center mt-4 text-sm">
+          ¿Ya tienes cuenta? <a href="/login" className="text-[#1A0087] font-bold">Inicia sesión</a>
+        </p>
       </div>
     </div>
   )

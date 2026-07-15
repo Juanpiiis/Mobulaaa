@@ -60,3 +60,180 @@ body {
 .btn-mobulaa:hover {
   background-color: #232323; /* Color secundario[cite: 1] */
 }
+/* ===== Layout general del Dashboard ===== */
+.dashboard-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.dashboard-sidebar {
+  width: 240px;
+  background-color: #1A0087;
+  color: #ffffff;
+  padding: 24px 0;
+  flex-shrink: 0;
+}
+
+.dashboard-sidebar .logo {
+  padding: 20px 16px 32px;
+  display: flex;
+  justify-content: center;
+}
+.dashboard-sidebar nav a {
+  display: block;
+  padding: 12px 24px;
+  color: #ffffff;
+  text-decoration: none;
+  font-size: 1rem;
+  transition: background 0.2s;
+}
+
+.dashboard-sidebar nav a:hover,
+.dashboard-sidebar nav a.active {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.dashboard-content {
+  flex: 1;
+  padding: 32px;
+  background-color: #f4f4f4;
+}
+
+/* ===== Encabezado de sección ===== */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.section-header h1 {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #232323;
+}
+
+/* ===== Botones de marca ===== */
+.btn-primary-mobulaa {
+  background-color: #1A0087;
+  color: #ffffff;
+  padding: 10px 18px;
+  border-radius: 6px;
+  font-weight: bold;
+  transition: background 0.3s;
+}
+
+.btn-primary-mobulaa:hover {
+  background-color: #232323;
+}
+
+.btn-edit-mobulaa {
+  color: #1A0087;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.btn-edit-mobulaa:hover {
+  background-color: rgba(26, 0, 135, 0.1);
+}
+
+.btn-delete-mobulaa {
+  color: #dc2626;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.btn-delete-mobulaa:hover {
+  background-color: rgba(220, 38, 38, 0.1);
+}
+
+/* ===== Tabla de productos ===== */
+.tabla-mobulaa {
+  width: 100%;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border-collapse: collapse;
+  overflow: hidden;
+}
+
+.tabla-mobulaa thead {
+  background-color: #1A0087;
+}
+
+.tabla-mobulaa thead th {
+  color: #ffffff;
+  text-align: left;
+  padding: 14px 16px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tabla-mobulaa tbody tr {
+  border-top: 1px solid #eee;
+  transition: background 0.15s;
+}
+
+.tabla-mobulaa tbody tr:hover {
+  background-color: #f9f9fb;
+}
+
+.tabla-mobulaa td {
+  padding: 12px 16px;
+  color: #232323;
+}
+
+.badge-categoria {
+  display: inline-block;
+  background-color: rgba(26, 0, 135, 0.1);
+  color: #1A0087;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* ===== Modal ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.modal-mobulaa {
+  background: #ffffff;
+  padding: 28px;
+  border-radius: 12px;
+  width: 400px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+}
+
+.modal-mobulaa h2 {
+  color: #232323;
+  font-size: 1.25rem;
+  font-weight: bold;
+  margin-bottom: 16px;
+}
+
+.btn-cancelar-mobulaa {
+  background-color: #e5e5e5;
+  color: #232323;
+  padding: 10px 18px;
+  border-radius: 6px;
+  font-weight: 600;
+  transition: background 0.2s;
+}
+
+.btn-cancelar-mobulaa:hover {
+  background-color: #d4d4d4;
+}
