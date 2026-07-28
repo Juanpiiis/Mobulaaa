@@ -27,18 +27,21 @@ export default function CatalogoPage() {
   }, [])
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-6">Catálogo de Productos</h1>
+    <div className="dashboard-content">
+      <div className="section-header">
+        <h1>Catálogo de Productos</h1>
+      </div>
+
       {loading ? <p>Cargando...</p> : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {inventario.map(item => (
-            <div key={item.id} className="bg-white rounded-lg shadow p-4">
-              <h3 className="font-bold text-lg">{item.productos?.nombre}</h3>
-              <p className="text-gray-500 text-sm mb-2">{item.productos?.codigo}</p>
-              <p className="text-gray-600 text-sm mb-2">{item.productos?.descripcion}</p>
-              <p className="text-sm mb-1"><span className="font-medium">Categoría:</span> {item.productos?.categoria}</p>
-              <p className="text-sm mb-1"><span className="font-medium">Bodega:</span> {item.bodegas?.nombre}</p>
-              <p className="text-sm"><span className="font-medium">Stock:</span> {item.cantidad_disponible}</p>
+            <div key={item.id} className="card-catalogo">
+              <h3>{item.productos?.nombre}</h3>
+              <p className="codigo">{item.productos?.codigo}</p>
+              <p className="descripcion">{item.productos?.descripcion}</p>
+              <p className="info-line"><strong>Categoría:</strong> {item.productos?.categoria}</p>
+              <p className="info-line"><strong>Bodega:</strong> {item.bodegas?.nombre}</p>
+              <p className="stock-line">Stock: {item.cantidad_disponible}</p>
             </div>
           ))}
         </div>

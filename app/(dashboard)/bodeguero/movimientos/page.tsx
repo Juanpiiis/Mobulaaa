@@ -14,7 +14,13 @@ interface Movimiento {
   bodegas_bodega_origen_id_fkey: { nombre: string }
 }
 
-export default function MovimientosPage() {
+const badgeMov = (tipo: string) => {
+  if (tipo === 'entrada') return 'badge-mov-entrada'
+  if (tipo === 'salida') return 'badge-mov-salida'
+  return 'badge-mov-traslado'
+}
+
+export default function Movimientos() {
   const [movimientos, setMovimientos] = useState<Movimiento[]>([])
   const [productos, setProductos] = useState<Producto[]>([])
   const [bodegas, setBodegas] = useState<Bodega[]>([])
@@ -49,33 +55,35 @@ export default function MovimientosPage() {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Movimientos</h1>
-        <button onClick={() => setShowModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">+ Nuevo Movimiento</button>
+    <div className="dashboard-content">
+      <div className="section-header">
+        <h1>Movimientos</h1>
+        <button onClick={() => setShowModal(true)} className="btn-primary-mobulaa">+ Nuevo Movimiento</button>
       </div>
 
       {loading ? <p>Cargando...</p> : (
-        <table className="w-full bg-white rounded-lg shadow">
-          <thead className="bg-gray-50">
+        <table className="tabla-mobulaa">
+          <thead>
             <tr>
-              <th className="p-3 text-left">Producto</th>
-              <th className="p-3 text-left">Tipo</th>
-              <th className="p-3 text-left">Cantidad</th>
-              <th className="p-3 text-left">Bodega Origen</th>
-              <th className="p-3 text-left">Fecha</th>
-              <th className="p-3 text-left">Observación</th>
+              <th>Producto</th>
+              <th>Tipo</th>
+              <th>Cantidad</th>
+              <th>Bodega Origen</th>
+              <th>Fecha</th>
+              <th>Observación</th>
             </tr>
           </thead>
           <tbody>
             {movimientos.map(m => (
-              <tr key={m.id} className="border-t">
-                <td className="p-3">{m.productos?.nombre}</td>
-                <td className="p-3 capitalize">{m.tipo}</td>
-                <td className="p-3">{m.cantidad}</td>
-                <td className="p-3">{m.bodegas_bodega_origen_id_fkey?.nombre || '-'}</td>
-                <td className="p-3">{new Date(m.fecha).toLocaleDateString()}</td>
-                <td className="p-3">{m.observacion || '-'}</td>
+              <tr key={m.id}>
+                <td>{m.productos?.nombre}</td>
+                <td>
+                  <span className={badgeMov(m.tipo)}>{m.tipo}</span>
+                </td>
+                <td>{m.cantidad}</td>
+                <td>{m.bodegas_bodega_origen_id_fkey?.nombre || '-'}</td>
+                <td>{new Date(m.fecha).toLocaleDateString()}</td>
+                <td>{m.observacion || '-'}</td>
               </tr>
             ))}
           </tbody>
@@ -83,33 +91,33 @@ export default function MovimientosPage() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white p-6 rounded-lg w-96">
-            <h2 className="text-xl font-bold mb-4">Nuevo Movimiento</h2>
-            <select className="w-full border p-2 rounded mb-3" value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})}>
+        <div className="modal-overlay">
+          <div className="modal-mobulaa">
+            <h2>Nuevo Movimiento</h2>
+            <select className="select-mobulaa" value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})}>
               <option value="entrada">Entrada</option>
               <option value="salida">Salida</option>
               <option value="traslado">Traslado</option>
             </select>
-            <select className="w-full border p-2 rounded mb-3" value={form.producto_id} onChange={e => setForm({...form, producto_id: e.target.value})}>
+            <select className="select-mobulaa" value={form.producto_id} onChange={e => setForm({...form, producto_id: e.target.value})}>
               <option value="">Seleccionar producto</option>
               {productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
             </select>
-            <select className="w-full border p-2 rounded mb-3" value={form.bodega_origen_id} onChange={e => setForm({...form, bodega_origen_id: e.target.value})}>
+            <select className="select-mobulaa" value={form.bodega_origen_id} onChange={e => setForm({...form, bodega_origen_id: e.target.value})}>
               <option value="">Bodega origen</option>
               {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
             </select>
             {form.tipo === 'traslado' && (
-              <select className="w-full border p-2 rounded mb-3" value={form.bodega_destino_id} onChange={e => setForm({...form, bodega_destino_id: e.target.value})}>
+              <select className="select-mobulaa" value={form.bodega_destino_id} onChange={e => setForm({...form, bodega_destino_id: e.target.value})}>
                 <option value="">Bodega destino</option>
                 {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
               </select>
             )}
-            <input className="w-full border p-2 rounded mb-3" type="number" placeholder="Cantidad" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} />
-            <input className="w-full border p-2 rounded mb-3" placeholder="Observación" value={form.observacion} onChange={e => setForm({...form, observacion: e.target.value})} />
+            <input className="input-mobulaa" type="number" placeholder="Cantidad" value={form.cantidad} onChange={e => setForm({...form, cantidad: e.target.value})} />
+            <input className="input-mobulaa" placeholder="Observación" value={form.observacion} onChange={e => setForm({...form, observacion: e.target.value})} />
             <div className="flex gap-2 justify-end">
-              <button onClick={() => setShowModal(false)} className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400">Cancelar</button>
-              <button onClick={handleGuardar} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Guardar</button>
+              <button onClick={() => setShowModal(false)} className="btn-cancelar-mobulaa">Cancelar</button>
+              <button onClick={handleGuardar} className="btn-primary-mobulaa">Guardar</button>
             </div>
           </div>
         </div>
