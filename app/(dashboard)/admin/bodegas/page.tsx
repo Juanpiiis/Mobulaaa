@@ -50,33 +50,37 @@ export default function BodegasPage() {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Bodegas</h1>
-        <button onClick={() => setShowModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+    <div className="dashboard-content">
+      <div className="section-header">
+        <h1>Bodegas</h1>
+        <button onClick={() => setShowModal(true)} className="btn-primary-mobulaa">
           + Nueva Bodega
         </button>
       </div>
 
       {loading ? <p>Cargando...</p> : (
-        <table className="w-full bg-white rounded-lg shadow">
-          <thead className="bg-gray-50">
+        <table className="tabla-mobulaa">
+          <thead>
             <tr>
-              <th className="p-3 text-left">Nombre</th>
-              <th className="p-3 text-left">Dirección</th>
-              <th className="p-3 text-left">Tipo</th>
-              <th className="p-3 text-left">Acciones</th>
+              <th>Nombre</th>
+              <th>Dirección</th>
+              <th>Tipo</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
             {bodegas.map(b => (
-              <tr key={b.id} className="border-t">
-                <td className="p-3">{b.nombre}</td>
-                <td className="p-3">{b.direccion}</td>
-                <td className="p-3 capitalize">{b.tipo}</td>
-                <td className="p-3 flex gap-2">
-                  <button onClick={() => handleEditar(b)} className="bg-yellow-400 text-white px-3 py-1 rounded hover:bg-yellow-500">Editar</button>
-                  <button onClick={() => handleEliminar(b.id)} className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600">Eliminar</button>
+              <tr key={b.id}>
+                <td>{b.nombre}</td>
+                <td>{b.direccion}</td>
+                <td>
+                  <span className={b.tipo === 'principal' ? 'badge-tipo-principal' : 'badge-tipo-secundaria'}>
+                    {b.tipo}
+                  </span>
+                </td>
+                <td className="flex gap-2">
+                  <button onClick={() => handleEditar(b)} className="btn-edit-mobulaa">Editar</button>
+                  <button onClick={() => handleEliminar(b.id)} className="btn-delete-mobulaa">Eliminar</button>
                 </td>
               </tr>
             ))}
@@ -85,18 +89,18 @@ export default function BodegasPage() {
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-white p-6 rounded-lg w-96">
-            <h2 className="text-xl font-bold mb-4">{editando ? 'Editar Bodega' : 'Nueva Bodega'}</h2>
-            <input className="w-full border p-2 rounded mb-3" placeholder="Nombre" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
-            <input className="w-full border p-2 rounded mb-3" placeholder="Dirección" value={form.direccion} onChange={e => setForm({...form, direccion: e.target.value})} />
-            <select className="w-full border p-2 rounded mb-3" value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})}>
+        <div className="modal-overlay">
+          <div className="modal-mobulaa">
+            <h2>{editando ? 'Editar Bodega' : 'Nueva Bodega'}</h2>
+            <input className="input-mobulaa" placeholder="Nombre" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
+            <input className="input-mobulaa" placeholder="Dirección" value={form.direccion} onChange={e => setForm({...form, direccion: e.target.value})} />
+            <select className="select-mobulaa" value={form.tipo} onChange={e => setForm({...form, tipo: e.target.value})}>
               <option value="principal">Principal</option>
               <option value="secundaria">Secundaria</option>
             </select>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => { setShowModal(false); setEditando(null); setForm({ nombre: '', direccion: '', tipo: 'secundaria' }) }} className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400">Cancelar</button>
-              <button onClick={handleGuardar} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Guardar</button>
+              <button onClick={() => { setShowModal(false); setEditando(null); setForm({ nombre: '', direccion: '', tipo: 'secundaria' }) }} className="btn-cancelar-mobulaa">Cancelar</button>
+              <button onClick={handleGuardar} className="btn-primary-mobulaa">Guardar</button>
             </div>
           </div>
         </div>
