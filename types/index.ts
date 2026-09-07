@@ -1,5 +1,6 @@
-export type Rol = 'admin' | 'bodeguero' | 'vendedor'
+export type Rol = 'admin' | 'bodeguero' | 'vendedor' | 'cartera'
 
+export type EstadoPedido = 'pendiente' | 'aprobado_bodega' | 'rechazado_bodega' | 'aprobado_cartera' | 'rechazado_cartera' | 'despachado' | 'entregado'
 export interface Usuario {
   id: string
   nombre: string
@@ -23,7 +24,7 @@ export interface Producto {
   descripcion: string
   categoria: string
   codigo: string
-  imagen_url?: string
+  precio: number
   activo: boolean
 }
 
@@ -47,15 +48,6 @@ export interface Movimiento {
   observacion?: string
 }
 
-export interface Pedido {
-  id: string
-  vendedor_id: string
-  bodega_id: string
-  estado: 'pendiente' | 'aprobado' | 'rechazado' | 'entregado'
-  fecha: string
-  observacion?: string
-}
-
 export interface DetallePedido {
   id: string
   pedido_id: string
@@ -63,3 +55,34 @@ export interface DetallePedido {
   cantidad_solicitada: number
   cantidad_aprobada?: number
 }
+
+export interface Pedido {
+  id: string
+  vendedor_id: string
+  bodega_id: string
+  estado: EstadoPedido
+  fecha: string
+  observacion?: string
+  subtotal: number
+  descuento_porcentaje: number
+  descuento_valor: number
+  total: number
+  numero_factura?: string
+}
+
+export const DESCUENTOS = [
+  { minimo: 5000000, porcentaje: 10 },
+  { minimo: 2000000, porcentaje: 5 },
+  { minimo: 1000000, porcentaje: 3 },
+]
+
+export const calcularDescuento = (subtotal: number): number => {
+  const descuento = DESCUENTOS.find(d => subtotal >= d.minimo)
+  return descuento?.porcentaje || 0
+}
+
+export const CATEGORIAS = [
+  'AUDIFONO', 'CARGADOR', 'CABLES', 'RELOJ', 'PARLANTES', 
+  'DIADEMAS', 'POWER BANK', 'CELULAR', 'TABLET', 'COMPUTADOR', 
+  'VENTILADOR', 'OTROS'
+]

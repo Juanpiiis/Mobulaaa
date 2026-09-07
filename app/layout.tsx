@@ -1,4 +1,5 @@
 import './globals.css'
+import { TiendaProvider } from '@/lib/context/TiendaContext'
 
 export const metadata = {
   title: 'Mobulaa',
@@ -9,7 +10,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body>
-        {children}
+        <TiendaProvider>
+          {children}
+        </TiendaProvider>
       </body>
     </html>
   )

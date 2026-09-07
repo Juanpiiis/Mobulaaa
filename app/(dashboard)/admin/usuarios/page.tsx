@@ -16,12 +16,6 @@ interface Bodega {
   nombre: string
 }
 
-const badgeRol = (rol: string) => {
-  if (rol === 'admin') return 'badge-rol-admin'
-  if (rol === 'bodeguero') return 'badge-rol-bodeguero'
-  return 'badge-rol-vendedor'
-}
-
 export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([])
   const [bodegas, setBodegas] = useState<Bodega[]>([])
@@ -63,34 +57,32 @@ export default function UsuariosPage() {
   }
 
   return (
-    <div className="dashboard-content">
-      <div className="section-header">
-        <h1>Usuarios</h1>
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Usuarios</h1>
       </div>
 
       {loading ? <p>Cargando...</p> : (
-        <table className="tabla-mobulaa">
-          <thead>
+        <table className="w-full bg-white rounded-lg shadow">
+          <thead className="bg-gray-50">
             <tr>
-              <th>Nombre</th>
-              <th>Email</th>
-              <th>Rol</th>
-              <th>Bodega</th>
-              <th>Acciones</th>
+              <th className="p-3 text-left">Nombre</th>
+              <th className="p-3 text-left">Email</th>
+              <th className="p-3 text-left">Rol</th>
+              <th className="p-3 text-left">Bodega</th>
+              <th className="p-3 text-left">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {usuarios.map(u => (
-              <tr key={u.id}>
-                <td>{u.nombre}</td>
-                <td>{u.email}</td>
-                <td>
-                  <span className={badgeRol(u.rol)}>{u.rol}</span>
-                </td>
-                <td>{bodegas.find(b => b.id === u.bodega_id)?.nombre || '-'}</td>
-                <td className="flex gap-2">
-                  <button onClick={() => handleEditar(u)} className="btn-edit-mobulaa">Editar</button>
-                  <button onClick={() => handleDesactivar(u.id)} className="btn-desactivar-mobulaa">Desactivar</button>
+              <tr key={u.id} className="border-t">
+                <td className="p-3">{u.nombre}</td>
+                <td className="p-3">{u.email}</td>
+                <td className="p-3 capitalize">{u.rol}</td>
+                <td className="p-3">{bodegas.find(b => b.id === u.bodega_id)?.nombre || '-'}</td>
+                <td className="p-3 flex gap-2">
+                  <button onClick={() => handleEditar(u)} className="bg-yellow-400 text-white px-3 py-1 rounded hover:bg-yellow-500">Editar</button>
+                  <button onClick={() => handleDesactivar(u.id)} className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600">Desactivar</button>
                 </td>
               </tr>
             ))}
@@ -99,22 +91,22 @@ export default function UsuariosPage() {
       )}
 
       {showModal && (
-        <div className="modal-overlay">
-          <div className="modal-mobulaa">
-            <h2>Editar Usuario</h2>
-            <input className="input-mobulaa" placeholder="Nombre" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
-            <select className="select-mobulaa" value={form.rol} onChange={e => setForm({...form, rol: e.target.value})}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg w-96">
+            <h2 className="text-xl font-bold mb-4">Editar Usuario</h2>
+            <input className="w-full border p-2 rounded mb-3" placeholder="Nombre" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
+            <select className="w-full border p-2 rounded mb-3" value={form.rol} onChange={e => setForm({...form, rol: e.target.value})}>
               <option value="admin">Admin</option>
               <option value="bodeguero">Bodeguero</option>
               <option value="vendedor">Vendedor</option>
             </select>
-            <select className="select-mobulaa" value={form.bodega_id} onChange={e => setForm({...form, bodega_id: e.target.value})}>
+            <select className="w-full border p-2 rounded mb-3" value={form.bodega_id} onChange={e => setForm({...form, bodega_id: e.target.value})}>
               <option value="">Sin bodega</option>
               {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
             </select>
             <div className="flex gap-2 justify-end">
-              <button onClick={() => { setShowModal(false); setEditando(null) }} className="btn-cancelar-mobulaa">Cancelar</button>
-              <button onClick={handleGuardar} className="btn-primary-mobulaa">Guardar</button>
+              <button onClick={() => { setShowModal(false); setEditando(null) }} className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400">Cancelar</button>
+              <button onClick={handleGuardar} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Guardar</button>
             </div>
           </div>
         </div>
