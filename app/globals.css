@@ -146,6 +146,42 @@ body {
   background-color: var(--color-surface-muted);
   line-height: 1.6;
   min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Touch manipulation para eliminar el retardo de 300ms de click en WebView */
+button, input, select, textarea, a {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Evitar zoom automático en iOS WebView garantizando 16px en móvil */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+}
+
+/* Micro-animación feedback táctil al pulsar */
+button:active:not(:disabled),
+.btn-mobulaa:active:not(:disabled),
+.btn-brand:active:not(:disabled),
+.btn-primary-mobulaa:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* Utilidades de Safe Area para notch y barra gestual */
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-pb {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
 }
 
 /* Reduce motion para usuarios que lo prefieren */
@@ -1184,6 +1220,7 @@ body {
 .login-page-bg {
   background-color: #f4f4f4;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1235,6 +1272,7 @@ body {
 .dashboard-layout {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
 }
  
 .dashboard-sidebar {

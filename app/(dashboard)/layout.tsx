@@ -47,7 +47,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (loading) {
     return (
-      <div className="loading-screen">
+      <div className="loading-screen min-h-[100dvh]">
         <div className="loading-screen__inner">
           <div className="loading-screen__spinner"></div>
           <p className="loading-screen__text">Cargando panel...</p>

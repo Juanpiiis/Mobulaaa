@@ -7,7 +7,7 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useTienda } from '@/lib/context/TiendaContext'
 import { useNotificaciones } from '@/lib/context/NotificacionesContext'
 import {
-  HomeIcon, CubeIcon, BuildingStorefrontIcon, UsersIcon, 
+  HomeIcon, CubeIcon, BuildingStorefrontIcon, UsersIcon,
   ArrowsRightLeftIcon, ClipboardDocumentListIcon, ChartBarIcon,
   ArrowLeftOnRectangleIcon, ShoppingCartIcon, CreditCardIcon,
   DocumentTextIcon, BeakerIcon, CalculatorIcon, ClipboardIcon,
@@ -30,7 +30,11 @@ const navigationConfig = {
       { name: 'Estadísticas', href: '/admin/estadisticas', icon: ChartBarIcon },
       { name: 'Subir Inventario', href: '/admin/subir-inventario', icon: ClipboardIcon },
       { name: 'Cortes', href: '/admin/cortes', icon: ClipboardDocumentListIcon },
-      { name: 'Movimientos', href: '/bodeguero/movimientos', icon: ArrowsRightLeftIcon },
+      { name: 'Pedidos de Vendedor', href: '/vendedor/mis-pedidos', icon: ClipboardDocumentListIcon },
+      { name: 'Pedidos de Bodega', href: '/bodeguero/pedidos', icon: ClipboardDocumentListIcon },
+      { name: 'Pedidos de Cartera', href: '/cartera', icon: ClipboardDocumentListIcon },
+      { name: 'Movimientos de bodega', href: '/bodeguero/movimientos', icon: ArrowsRightLeftIcon },
+      { name: 'Entrada Mercancía', href: '/bodeguero/entradas', icon: ClipboardIcon },
     ]
   },
   bodeguero: {
@@ -54,8 +58,7 @@ const navigationConfig = {
     title: 'Panel de Vendedor',
     items: [
       { name: 'Inicio', href: '/vendedor', icon: HomeIcon },
-      { name: 'Catálogo', href: '/vendedor/catalogo', icon: ShoppingCartIcon },
-      { name: 'Mis Pedidos', href: '/vendedor/mis-pedidos', icon: ClipboardDocumentListIcon },
+      { name: 'Pedidos', href: '/vendedor/mis-pedidos', icon: ClipboardDocumentListIcon },
     ]
   }
 }
@@ -76,10 +79,10 @@ function Campana() {
   }, [])
 
   return (
-    <div className="campana-container">
-      <button 
-        onClick={() => setIsOpen(!isOpen)} 
-        className="campana-trigger"
+    <div className="campana-container relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="campana-trigger w-11 h-11 flex items-center justify-center rounded-xl active:scale-[0.98]"
         aria-label="Notificaciones"
       >
         <BellIcon className="campana-trigger__icon" />
@@ -89,28 +92,28 @@ function Campana() {
           </span>
         )}
       </button>
-      
+
       {isOpen && (
-        <div className="campana-panel">
+        <div className="campana-panel z-50 max-w-[calc(100vw-1.5rem)] right-0 shadow-2xl rounded-xl border border-gray-200">
           <div className="campana-panel__header">
             <p className="campana-panel__title">Notificaciones</p>
             {noLeidas > 0 && (
-              <button 
-                onClick={marcarTodasLeidas} 
+              <button
+                onClick={marcarTodasLeidas}
                 className="campana-panel__mark-all"
               >
                 Marcar todas
               </button>
             )}
           </div>
-          
+
           <div className="campana-panel__list">
             {notificaciones.length === 0 ? (
               <p className="campana-panel__empty">Sin notificaciones nuevas</p>
             ) : notificaciones.map(n => (
-              <div 
-                key={n.id} 
-                onClick={() => marcarLeida(n.id)} 
+              <div
+                key={n.id}
+                onClick={() => marcarLeida(n.id)}
                 className={`campana-notification ${!n.leida ? 'campana-notification--unread' : ''}`}
               >
                 <p className="campana-notification__message">{n.mensaje}</p>
@@ -149,19 +152,19 @@ export default function DashboardContent({ children, rol }: { children: React.Re
 
   return (
     <div className="dashboard-shell">
-      
-      <div 
+
+      <div
         className={`sidebar-overlay ${isSidebarOpen ? 'sidebar-overlay--visible' : ''}`}
         onClick={() => setIsSidebarOpen(false)}
       />
 
       {/* ======================== SIDEBAR ======================== */}
-      <aside className={`dashboard-sidebar ${isSidebarOpen ? 'dashboard-sidebar--open' : 'dashboard-sidebar--collapsed'}`}>
-        
+      <aside className={`dashboard-sidebar ${isSidebarOpen ? 'dashboard-sidebar--open' : 'dashboard-sidebar--collapsed'} pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]`}>
+
         <div className="sidebar-logo">
-          <img 
-            src="/logo-mobulaa-blanco.png" 
-            alt="Mobulaa" 
+          <img
+            src="/logo-mobulaa-blanco.png"
+            alt="Mobulaa"
             className="sidebar-logo__img"
           />
         </div>
@@ -221,12 +224,12 @@ export default function DashboardContent({ children, rol }: { children: React.Re
 
       {/* ================== CONTENIDO PRINCIPAL ================== */}
       <div className="dashboard-main-wrapper">
-        
-        <header className="dashboard-topbar">
+
+        <header className="dashboard-topbar pt-[env(safe-area-inset-top)] min-h-[calc(4rem+env(safe-area-inset-top))]">
           <div className="topbar-left">
-            <button 
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
-              className="topbar-hamburger"
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="topbar-hamburger w-11 h-11 flex items-center justify-center rounded-xl active:scale-[0.98]"
               aria-label="Menú de navegación"
             >
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
