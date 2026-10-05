@@ -27,7 +27,6 @@ export function ClienteSelector({ onClienteSeleccionado, onVerHistorial }: Props
         onClienteSeleccionado(nuevo)
     }
 
-    // Solo números
     const handleCCChange = (valor: string) => {
         const soloNumeros = valor.replace(/\D/g, '')
         setCcNit(soloNumeros)
@@ -41,7 +40,7 @@ export function ClienteSelector({ onClienteSeleccionado, onVerHistorial }: Props
             </label>
             <div className="relative">
                 <input
-                    className="w-full border border-gray-200 p-3 pr-10 rounded-lg text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
+                    className="w-full border border-gray-200 px-3 py-3 pr-10 rounded-xl text-base min-h-[44px] focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 transition-colors"
                     placeholder="Escribe la cédula o NIT"
                     value={ccNit}
                     onChange={(e) => handleCCChange(e.target.value)}
@@ -65,10 +64,10 @@ export function ClienteSelector({ onClienteSeleccionado, onVerHistorial }: Props
             </div>
 
             {estado === 'escribiendo' && ccNit.length >= 3 && (
-                <p className="text-xs text-gray-400 mt-2">Escribiendo…</p>
+                <p className="text-xs text-[#828282] mt-2">Escribiendo…</p>
             )}
             {estado === 'buscando' && (
-                <p className="text-xs text-gray-500 mt-2">Buscando…</p>
+                <p className="text-xs text-[#828282] mt-2">Buscando…</p>
             )}
             {estado === 'error' && (
                 <p className="text-xs text-red-500 mt-2">{error || 'Error al buscar'}</p>
@@ -84,15 +83,15 @@ export function ClienteSelector({ onClienteSeleccionado, onVerHistorial }: Props
             )}
 
             {estado === 'no_encontrado' && !modoRegistro && ccNit.trim().length >= 3 && (
-                <div className="border border-yellow-200 bg-yellow-50/50 rounded-xl p-4 mt-3">
+                <div className="border border-yellow-200 bg-yellow-50/50 rounded-2xl p-4 mt-3">
                     <p className="text-sm font-semibold text-yellow-700">⚠️ Cliente no encontrado</p>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-[#828282] mt-1">
                         No hay ningún cliente con la CC/NIT <span className="font-medium">{ccNit}</span>
                     </p>
                     <button
                         type="button"
                         onClick={() => setModoRegistro(true)}
-                        className="mt-3 w-full px-4 py-2 text-sm bg-[#1A0087] text-white rounded-lg hover:bg-[#130066] font-medium"
+                        className="mt-3 w-full min-h-[44px] px-4 py-2.5 text-sm bg-[#1A0087] text-white rounded-xl hover:bg-[#130066] active:scale-[0.98] font-medium transition-all"
                     >
                         + Registrar nuevo cliente
                     </button>

@@ -1,130 +1,122 @@
 // app/api/subir-inventario/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/client'
+import { createClient } from '@/lib/supabase/server'
 import * as XLSX from 'xlsx'
 import { limpiarYProcesarExcel } from '@/lib/utils/dataExcel'
 
 export async function POST(req: NextRequest) {
-  const formData = await req.formData()
-  const file = formData.get('file') as File
-  const bodegaId = formData.get('bodega_id') as string
-
-  if (!file || !bodegaId) {
-    return NextResponse.json({ error: 'Faltan datos (archivo o bodega)' }, { status: 400 })
-  }
-
-  const supabase = createClient()
-
   try {
-    // 1. Leer Excel
+    const formData = await req.formData()
+    const file = formData.get('file') as File
+    const bodegaId = formData.get('bodega_id') as string
+
+    if (!file || !bodegaId) {
+      return NextResponse.json({ error: 'Faltan datos (archivo o bodega)' }, { status: 400 })
+    }
+
+    // Leer Excel (todas las hojas)
     const buffer = await file.arrayBuffer()
     const workbook = XLSX.read(buffer)
-    
-    // 👇 CAMBIO CLAVE: Recorrer TODAS las hojas del Excel
-    let todosLosDatos: any[][] = []
+
+    let todasLasFilas: any[][] = []
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName]
-      // Leer con header: 1 para que las filas sean arrays simples
       const data = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: null })
-      todosLosDatos = [...todosLosDatos, ...data]
-    }
-    
-    // 2. Limpiar datos (procesa todas las hojas a la vez)
-    const productosLimpios = limpiarYProcesarExcel(todosLosDatos)
-
-    // 3. Registro del corte
-    const { data: corte, error: corteError } = await supabase
-      .from('cortes')
-      .insert({ bodega_id: bodegaId, estado: 'finalizado', observaciones: 'Carga automática desde Excel' })
-      .select('id')
-      .single()
-
-    if (corteError) {
-      console.error('💥 ERROR AL CREAR CORTE:', corteError)
-      return NextResponse.json({ error: `Error al crear el corte: ${corteError.message}` }, { status: 500 })
+      todasLasFilas = [...todasLasFilas, ...data]
     }
 
-    // 4. Procesar cada producto
+    if (todasLasFilas.length === 0) {
+      return NextResponse.json({ error: 'El archivo está vacío' }, { status: 400 })
+    }
+
+    // Limpiar
+    const { productos, errores: erroresLimpieza, duplicadosUnificados } = limpiarYProcesarExcel(todasLasFilas)
+
+    if (productos.length === 0) {
+      return NextResponse.json({ error: 'No se encontraron productos válidos', detalle: erroresLimpieza }, { status: 400 })
+    }
+
+    const supabase = await createClient()
+
+    // Categorías
+    const categoriasUnicas = [...new Set(productos.map((p) => p.categoria))]
+    for (const nombreCat of categoriasUnicas) {
+      await supabase
+        .from('categorias')
+        .upsert({ nombre: nombreCat }, { onConflict: 'nombre', ignoreDuplicates: true })
+    }
+
+    const { data: categoriasDB } = await supabase.from('categorias').select('id, nombre')
+    const categoriaMap = new Map<string, string>()
+    categoriasDB?.forEach((c: any) => categoriaMap.set(c.nombre, c.id))
+
     let procesados = 0
-    let errores = 0
-    const erroresDetallados: string[] = []
+    let errores = erroresLimpieza.length
+    const erroresDetallados: string[] = [...erroresLimpieza]
 
-    for (const prod of productosLimpios) {
+    for (const prod of productos) {
       try {
-        // Buscar o crear categoría
-        const { data: categoria } = await supabase
-          .from('categorias')
-          .select('id')
-          .eq('nombre', prod.categoria)
-          .maybeSingle()
+        const categoria_id = categoriaMap.get(prod.categoria) || null
 
-        let categoriaId = categoria?.id
-        if (!categoriaId) {
-          const { data: nuevaCat } = await supabase
-            .from('categorias')
-            .insert({ nombre: prod.categoria })
-            .select('id')
-            .single()
-          categoriaId = nuevaCat?.id
-        }
-
-        // Buscar o crear producto
-        const { data: producto } = await supabase
+        const { data: productoDB, error: errProd } = await supabase
           .from('productos')
-          .select('id, nombre')
-          .eq('nombre', prod.descripcion)
-          .maybeSingle()
+          .upsert(
+            {
+              nombre: prod.nombre,
+              marca: prod.marca,
+              categoria: prod.categoria,
+              categoria_id,
+              codigo: prod.codigo,
+              precio: prod.precio,
+              activo: prod.activo,
+            },
+            { onConflict: 'codigo' }
+          )
+          .select('id')
+          .single()
 
-        let productoId = producto?.id
-        if (!productoId) {
-          const { data: nuevoProd } = await supabase
-            .from('productos')
-            .insert({
-              nombre: prod.descripcion,
-              categoria_id: categoriaId,
-              modelo: prod.modelo,
-              color: prod.color,
-              sku: prod.descripcion.replace(/\s/g, '-').toUpperCase()
-            })
-            .select('id')
-            .single()
-          productoId = nuevoProd?.id
-        }
-
-        // Insertar en detalle_cortes
-        const { error: detalleError } = await supabase
-          .from('detalle_cortes')
-          .insert({
-            corte_id: corte.id,
-            producto_id: productoId,
-            cantidad_sistema: prod.cantidad_sistema,
-            cantidad_fisica: prod.cantidad_fisica,
-            observacion: prod.observacion
-          })
-
-        if (detalleError) {
+        if (errProd || !productoDB) {
           errores++
-          erroresDetallados.push(`Error guardando ${prod.descripcion}: ${detalleError.message}`)
-        } else {
-          procesados++
+          erroresDetallados.push(`Producto ${prod.nombre}: ${errProd?.message || 'sin ID'}`)
+          continue
         }
+
+        const { error: errInv } = await supabase
+          .from('inventario')
+          .upsert(
+            {
+              producto_id: productoDB.id,
+              bodega_id: bodegaId,
+              cantidad_disponible: prod.cantidad,
+              cantidad_minima: 10,
+            },
+            { onConflict: 'producto_id,bodega_id' }
+          )
+
+        if (errInv) {
+          errores++
+          erroresDetallados.push(`Inventario ${prod.nombre}: ${errInv.message}`)
+          continue
+        }
+
+        procesados++
       } catch (e: any) {
         errores++
-        erroresDetallados.push(`Error interno con ${prod.descripcion}: ${e.message}`)
+        erroresDetallados.push(`Excepción ${prod.nombre}: ${e.message}`)
       }
     }
 
     return NextResponse.json({
       message: 'Inventario subido y limpiado correctamente',
-      total_modelos: productosLimpios.length,
-      total_colores: productosLimpios.reduce((acc, p) => acc + p.colores.length, 0),
+      total_productos: productos.length,
       procesados,
       errores,
-      erroresDetallados
+      duplicadosUnificados,
+      erroresDetallados: erroresDetallados.slice(0, 50),
+      categorias: categoriasUnicas,
     })
-
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error general:', error)
-    return NextResponse.json({ error: 'Error al procesar el archivo' }, { status: 500 })
+    return NextResponse.json({ error: error.message || 'Error al procesar' }, { status: 500 })
   }
 }

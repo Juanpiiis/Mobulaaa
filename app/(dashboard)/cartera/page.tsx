@@ -3,6 +3,14 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTienda } from '@/lib/context/TiendaContext'
 import { calcularDescuento } from '@/types/index'
+import { CotizacionPreview } from '@/components/cotizaciones/CotizacionPreview'
+import { CotizacionBadge } from '@/components/cotizaciones/CotizacionBadge'
+import {
+  getEstadoCotizacion,
+  generarNumeroCotizacion,
+  generarNumeroFactura,
+} from '@/lib/utils/cotizacion'
+import { DocumentTextIcon } from '@heroicons/react/24/outline'
 
 interface DetallePedido {
   id: string
@@ -20,6 +28,7 @@ interface Pedido {
   descuento_valor: number
   total: number
   numero_factura: string
+  numero_cotizacion: string | null
   usuarios: { nombre: string; email: string }
   bodegas: { nombre: string }
   detalle_pedido: DetallePedido[]
@@ -68,6 +77,7 @@ export default function CarteraPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [loading, setLoading] = useState(true)
   const [procesando, setProcesando] = useState<string | null>(null)
+  const [verCotizacion, setVerCotizacion] = useState<string | null>(null)
   const { tiendaActual } = useTienda()
   const supabase = createClient()
 
@@ -95,20 +105,57 @@ export default function CarteraPage() {
 
   const handleApprove = async (pedido: Pedido) => {
     setProcesando(pedido.id)
-    const { subtotal, porcentaje, descuento, total } = calcularTotales(pedido.detalle_pedido)
-    const numeroFactura = `FAC-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`
+    try {
+      const { subtotal, porcentaje, descuento, total } = calcularTotales(pedido.detalle_pedido)
+      const numeroFactura = generarNumeroFactura()
+      const numeroCotizacion = await generarNumeroCotizacion(supabase)
 
-    await supabase.from('pedidos').update({
-      estado: 'aprobado_cartera',
-      subtotal,
-      descuento_porcentaje: porcentaje,
-      descuento_valor: descuento,
-      total,
-      numero_factura: numeroFactura
-    }).eq('id', pedido.id)
+      // 1. Actualizar pedido
+      const { error: errUpdate } = await supabase.from('pedidos').update({
+        estado: 'aprobado_cartera',
+        subtotal,
+        descuento_porcentaje: porcentaje,
+        descuento_valor: descuento,
+        total,
+        numero_factura: numeroFactura,
+        numero_cotizacion: numeroCotizacion,
+        aprobado_cartera_en: new Date().toISOString(),
+      }).eq('id', pedido.id)
 
-    setProcesando(null)
-    fetchOrders()
+      if (errUpdate) {
+        alert('Error actualizando pedido: ' + errUpdate.message)
+        return
+      }
+
+      // 2. Generar PDF y subir a Drive
+      const res = await fetch('/api/cotizacion/generar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pedidoId: pedido.id }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        console.error('Error subiendo a Drive:', data)
+        alert(
+          'Pedido aprobado, pero no se pudo subir el PDF a Drive: ' +
+          (data.error || 'Error desconocido')
+        )
+      } else {
+        alert(
+          `✅ Pedido aprobado\n\n` +
+          `Cotización: ${data.numeroCotizacion}\n` +
+          `Carpeta: ${data.subcarpeta}\n` +
+          `Archivo: ${data.nombreArchivo}\n\n` +
+          `El PDF se subió a tu Drive`
+        )
+      }
+
+      fetchOrders()
+    } finally {
+      setProcesando(null)
+    }
   }
 
   const handleReject = async (id: string) => {
@@ -167,7 +214,10 @@ export default function CarteraPage() {
                           <p className="text-sm text-gray-500">{new Date(p.fecha).toLocaleDateString()}</p>
                           {p.observacion && <p className="text-sm italic mt-1">{p.observacion}</p>}
                         </div>
-                        <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                          <CotizacionBadge estado={getEstadoCotizacion(p.estado)} size="sm" />
+                        </div>
                       </div>
 
                       <EstadoBarra estado={p.estado} />
@@ -212,11 +262,15 @@ export default function CarteraPage() {
                         </div>
                       </div>
 
-                      <div className="flex gap-2">
-                        <button onClick={() => handleApprove(p)} disabled={procesando === p.id} className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:opacity-50">
-                          {procesando === p.id ? 'Procesando...' : '✅ Aprobar y generar factura'}
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => setVerCotizacion(p.id)} className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] px-4 py-2 rounded hover:bg-[#1A0087]/20 font-medium text-sm">
+                          <DocumentTextIcon className="w-4 h-4" />
+                          Ver cotización
                         </button>
-                        <button onClick={() => handleReject(p.id)} disabled={procesando === p.id} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 disabled:opacity-50">
+                        <button onClick={() => handleApprove(p)} disabled={procesando === p.id} className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:opacity-50 text-sm">
+                          {procesando === p.id ? 'Procesando...' : '✅ Aprobar y generar cotización'}
+                        </button>
+                        <button onClick={() => handleReject(p.id)} disabled={procesando === p.id} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 disabled:opacity-50 text-sm">
                           ❌ Rechazar
                         </button>
                       </div>
@@ -237,6 +291,7 @@ export default function CarteraPage() {
                       <p className="font-medium">{p.usuarios?.nombre}</p>
                       <p className="text-sm text-gray-500">{new Date(p.fecha).toLocaleDateString()}</p>
                       {p.numero_factura && <p className="text-sm text-blue-600 font-medium">{p.numero_factura}</p>}
+                      {p.numero_cotizacion && <p className="text-xs font-mono text-[#1A0087]">{p.numero_cotizacion}</p>}
                       {p.detalle_pedido.map((d, i) => (
                         <p key={i} className="text-sm text-gray-600">• {d.productos?.nombre} x{d.cantidad_solicitada}</p>
                       ))}
@@ -247,14 +302,35 @@ export default function CarteraPage() {
                         </div>
                       )}
                     </div>
-                    <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                    <div className="flex flex-col items-end gap-2">
+                      <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                      <CotizacionBadge
+                        estado={getEstadoCotizacion(p.estado)}
+                        numeroCotizacion={p.numero_cotizacion}
+                        size="sm"
+                      />
+                    </div>
                   </div>
                   <EstadoBarra estado={p.estado} />
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={() => setVerCotizacion(p.id)} className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] px-3 py-1.5 rounded text-xs hover:bg-[#1A0087]/20 font-medium">
+                      <DocumentTextIcon className="w-3.5 h-3.5" />
+                      Ver cotización
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         </>
+      )}
+
+      {/* Modal de cotización */}
+      {verCotizacion && (
+        <CotizacionPreview
+          pedidoId={verCotizacion}
+          onClose={() => setVerCotizacion(null)}
+        />
       )}
     </div>
   )

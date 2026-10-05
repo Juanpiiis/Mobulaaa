@@ -48,7 +48,6 @@ export function ProductoSelector({
         }
     }, [item.producto_id])
 
-    // Cerrar dropdown al hacer click fuera
     useEffect(() => {
         const handler = (e: MouseEvent) => {
             if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
@@ -94,12 +93,10 @@ export function ProductoSelector({
     return (
         <div
             ref={wrapRef}
-            className={`relative bg-white rounded-2xl border border-gray-200 shadow-sm ${productoSel ? 'overflow-hidden' : (abierto ? 'z-30' : 'z-10')}`}
+            className={`relative bg-white rounded-2xl border border-gray-200 shadow-sm ${productoSel ? 'overflow-hidden' : abierto ? 'z-30' : 'z-10'}`}
         >
-            {/* Producto seleccionado */}
             {productoSel ? (
                 <div className="p-4 space-y-4">
-                    {/* Card producto */}
                     <div className="flex items-start gap-3">
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-semibold text-[#232323] leading-tight break-words">
@@ -115,18 +112,22 @@ export function ProductoSelector({
                             type="button"
                             onClick={() => {
                                 onSelectProducto(index, {
-                                    id: '', nombre: '', precio: 0, categoria: null, sku: null, stock_disponible: 0,
+                                    id: '',
+                                    nombre: '',
+                                    precio: 0,
+                                    categoria: null,
+                                    sku: null,
+                                    stock_disponible: 0,
                                 })
                                 setTermino('')
                             }}
-                            className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors"
+                            className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full text-gray-400 hover:bg-red-50 hover:text-red-500 active:bg-red-100 transition-colors"
                             aria-label="Quitar producto"
                         >
-                            <XMarkIcon className="w-4 h-4" />
+                            <XMarkIcon className="w-5 h-5" />
                         </button>
                     </div>
 
-                    {/* Aviso congelado */}
                     {congelado && (
                         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
                             <LockClosedIcon className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
@@ -136,13 +137,10 @@ export function ProductoSelector({
                         </div>
                     )}
 
-                    {/* Cantidad + subtotal */}
                     {!congelado && (
                         <>
                             <div>
-                                <label className="block text-xs font-medium text-[#828282] mb-2">
-                                    Cantidad
-                                </label>
+                                <label className="block text-xs font-medium text-[#828282] mb-2">Cantidad</label>
                                 <div className="flex items-center gap-2">
                                     <button
                                         type="button"
@@ -187,24 +185,22 @@ export function ProductoSelector({
                         </>
                     )}
 
-                    {/* Botón eliminar fila (si hay varios) */}
                     {mostrarEliminar && onEliminar && (
                         <button
                             type="button"
                             onClick={() => onEliminar(index)}
-                            className="w-full text-xs text-gray-400 hover:text-red-500 py-1 transition-colors"
+                            className="w-full min-h-[44px] text-xs text-gray-400 hover:text-red-500 active:bg-red-50 rounded-lg py-2 transition-colors"
                         >
                             Quitar esta fila
                         </button>
                     )}
                 </div>
             ) : (
-                /* Buscador */
                 <div className="p-3">
                     <div className="relative">
                         <MagnifyingGlassIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                         <input
-                            className="w-full border border-gray-200 rounded-xl pl-9 pr-10 py-3 text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
+                            className="w-full border border-gray-200 rounded-xl pl-9 pr-10 py-3 text-base min-h-[44px] focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 transition-colors"
                             placeholder="Buscar producto..."
                             value={termino}
                             onChange={(e) => {
@@ -224,18 +220,21 @@ export function ProductoSelector({
                         <button
                             type="button"
                             onClick={() => onEliminar(index)}
-                            className="mt-2 w-full text-xs text-gray-400 hover:text-red-500 py-1 transition-colors"
+                            className="mt-2 w-full min-h-[44px] text-xs text-gray-400 hover:text-red-500 active:bg-red-50 rounded-lg py-2 transition-colors"
                         >
                             Quitar esta fila
                         </button>
                     )}
 
-                    {/* Dropdown */}
                     {abierto && (
-                        <div className="absolute z-30 left-0 right-0 mt-2 mx-3 bg-white border border-gray-200 rounded-xl max-h-72 overflow-y-auto shadow-2xl">
+                        <div className="absolute z-30 left-3 right-3 mt-2 bg-white border border-gray-200 rounded-xl max-h-72 overflow-y-auto shadow-2xl">
                             {resultados.length === 0 ? (
                                 <p className="p-5 text-sm text-[#828282] text-center">
-                                    {buscando ? 'Buscando…' : termino.length < 2 ? 'Escribe al menos 2 letras' : 'Sin resultados'}
+                                    {buscando
+                                        ? 'Buscando…'
+                                        : termino.length < 2
+                                            ? 'Escribe al menos 2 letras'
+                                            : 'Sin resultados'}
                                 </p>
                             ) : (
                                 resultados.map((p) => {

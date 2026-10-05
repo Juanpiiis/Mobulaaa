@@ -11,7 +11,7 @@ import {
   ArrowsRightLeftIcon, ClipboardDocumentListIcon, ChartBarIcon,
   ArrowLeftOnRectangleIcon, ShoppingCartIcon, CreditCardIcon,
   DocumentTextIcon, BeakerIcon, CalculatorIcon, ClipboardIcon,
-  ChevronDownIcon, BellIcon
+  ChevronDownIcon, BellIcon, PlusIcon
 } from '@heroicons/react/24/outline'
 
 /* ============================================================
@@ -131,7 +131,7 @@ function Campana() {
    Componente: DashboardContent (Layout visual)
    ============================================================ */
 export default function DashboardContent({ children, rol }: { children: React.ReactNode; rol: string }) {
-  const { tiendaActual, setTiendaActual, bodegas } = useTienda()
+  const { tiendaActual, setTiendaActual, bodegas, soloUnaBodega } = useTienda()
   const router = useRouter()
   const supabase = createClient()
   const pathname = usePathname()
@@ -148,6 +148,62 @@ export default function DashboardContent({ children, rol }: { children: React.Re
     if (window.innerWidth < 1024) {
       setIsSidebarOpen(false)
     }
+  }
+
+  // ✅ ¿Estamos en la página de bodegas?
+  const esPaginaBodegas = pathname === '/admin/bodegas'
+
+  // ✅ Reglas del selector de bodega:
+  // - 0 bodegas → mostrar botón "Crear primera bodega"
+  // - 1 bodega → mostrar nombre fijo (no dropdown)
+  // - 2+ bodegas → mostrar dropdown
+  const renderSelector = () => {
+    if (bodegas.length === 0) {
+      return (
+        <div className="sidebar-store-selector">
+          <p className="sidebar-store-selector__label">Tienda / Bodega</p>
+          <Link
+            href="/admin/bodegas"
+            className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-3 py-2.5 rounded-xl text-sm font-medium transition-colors min-h-[44px]"
+          >
+            <PlusIcon className="w-4 h-4" />
+            <span>Crear primera bodega</span>
+          </Link>
+        </div>
+      )
+    }
+
+    if (soloUnaBodega) {
+      return (
+        <div className="sidebar-store-selector">
+          <p className="sidebar-store-selector__label">Tienda / Bodega</p>
+          <div className="bg-white/10 text-white px-3 py-2.5 rounded-xl text-sm font-medium min-h-[44px] flex items-center">
+            {tiendaActual?.nombre || bodegas[0]?.nombre || 'Bodega'}
+          </div>
+        </div>
+      )
+    }
+
+    // 2+ bodegas → dropdown normal
+    return (
+      <div className="sidebar-store-selector">
+        <p className="sidebar-store-selector__label">Tienda / Bodega</p>
+        <div className="sidebar-store-selector__select-wrapper">
+          <select
+            className="sidebar-store-selector__select"
+            value={tiendaActual?.id || ''}
+            onChange={e => {
+              const bodega = bodegas.find(b => b.id === e.target.value) || null
+              setTiendaActual(bodega)
+            }}
+          >
+            <option value="">Sin seleccionar</option>
+            {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+          </select>
+          <ChevronDownIcon className="sidebar-store-selector__chevron" />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -176,23 +232,8 @@ export default function DashboardContent({ children, rol }: { children: React.Re
           </p>
         </div>
 
-        <div className="sidebar-store-selector">
-          <p className="sidebar-store-selector__label">Tienda / Bodega</p>
-          <div className="sidebar-store-selector__select-wrapper">
-            <select
-              className="sidebar-store-selector__select"
-              value={tiendaActual?.id || ''}
-              onChange={e => {
-                const bodega = bodegas.find(b => b.id === e.target.value) || null
-                setTiendaActual(bodega)
-              }}
-            >
-              <option value="">Sin seleccionar</option>
-              {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-            </select>
-            <ChevronDownIcon className="sidebar-store-selector__chevron" />
-          </div>
-        </div>
+        {/* ✅ Selector condicional */}
+        {renderSelector()}
 
         <nav className="sidebar-nav">
           {navConfig.items.map((item) => {
@@ -248,7 +289,13 @@ export default function DashboardContent({ children, rol }: { children: React.Re
         </header>
 
         <main className="dashboard-main">
-          {!tiendaActual ? (
+          {/*
+            ✅ FIX: NO bloquear si:
+            - Ya hay bodega seleccionada
+            - Estamos en /admin/bodegas (para poder crear la primera)
+            - Hay 0 bodegas (para permitir crear la primera)
+          */}
+          {(!tiendaActual && !esPaginaBodegas && bodegas.length > 0) ? (
             <div className="empty-state">
               <div className="empty-state__card">
                 <div className="empty-state__icon-wrapper">

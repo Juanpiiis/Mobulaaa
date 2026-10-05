@@ -1,5 +1,5 @@
 import './globals.css'
-import { TiendaProvider } from '@/lib/context/TiendaContext'
+import { ProvidersWithKey } from '@/components/ProvidersWithKey'
 import type { Viewport, Metadata } from 'next'
 
 export const viewport: Viewport = {
@@ -18,10 +18,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es" className="h-full">
       <body className="min-h-[100dvh] bg-[#F7F7FB] text-[#232323] antialiased">
-        <TiendaProvider>
+        <ProvidersWithKey>
           {children}
-        </TiendaProvider>
+        </ProvidersWithKey>
       </body>
     </html>
   )
-}
+}

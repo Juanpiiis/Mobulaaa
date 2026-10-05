@@ -51,11 +51,11 @@ export default function MovimientosPage() {
 
       // Calcular totales
       let entradas = 0, salidas = 0, transferencias = 0
-      ;(data || []).forEach((m: any) => {
-        if (m.tipo === 'entrada') entradas += m.cantidad
-        if (m.tipo === 'salida') salidas += m.cantidad
-        if (m.tipo === 'transferencia') transferencias += m.cantidad
-      })
+        ; (data || []).forEach((m: any) => {
+          if (m.tipo === 'entrada') entradas += m.cantidad
+          if (m.tipo === 'salida') salidas += m.cantidad
+          if (m.tipo === 'transferencia') transferencias += m.cantidad
+        })
       setTotalEntradas(entradas)
       setTotalSalidas(salidas)
       setTotalTransferencias(transferencias)
@@ -83,9 +83,8 @@ export default function MovimientosPage() {
             <button
               key={p}
               onClick={() => setPeriodo(p)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                periodo === p ? 'bg-[#1A0087] text-white' : 'text-gray-600 hover:bg-gray-100'
-              }`}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${periodo === p ? 'bg-[#1A0087] text-white' : 'text-gray-600 hover:bg-gray-100'
+                }`}
             >
               {p} días
             </button>
@@ -156,24 +155,22 @@ export default function MovimientosPage() {
                   <tr key={m.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     <td className="px-6 py-4 text-gray-600">{formatDateShort(m.fecha)}</td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                        m.tipo === 'entrada' ? 'bg-green-100 text-green-700' :
-                        m.tipo === 'salida' ? 'bg-red-100 text-red-700' :
-                        'bg-blue-100 text-blue-700'
-                      }`}>
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${m.tipo === 'entrada' ? 'bg-green-100 text-green-700' :
+                          m.tipo === 'salida' ? 'bg-red-100 text-red-700' :
+                            'bg-blue-100 text-blue-700'
+                        }`}>
                         {m.tipo === 'entrada' ? <ArrowDownTrayIcon className="w-3 h-3" /> :
-                         m.tipo === 'salida' ? <ArrowUpTrayIcon className="w-3 h-3" /> :
-                         <ArrowsRightLeftIcon className="w-3 h-3" />}
+                          m.tipo === 'salida' ? <ArrowUpTrayIcon className="w-3 h-3" /> :
+                            <ArrowsRightLeftIcon className="w-3 h-3" />}
                         {m.tipo}
                       </span>
                     </td>
                     <td className="px-6 py-4 font-medium text-gray-800">{m.productos?.nombre || '—'}</td>
                     <td className="px-6 py-4">
-                      <span className={`font-semibold ${
-                        m.tipo === 'entrada' ? 'text-green-600' :
-                        m.tipo === 'salida' ? 'text-red-600' :
-                        'text-blue-600'
-                      }`}>
+                      <span className={`font-semibold ${m.tipo === 'entrada' ? 'text-green-600' :
+                          m.tipo === 'salida' ? 'text-red-600' :
+                            'text-blue-600'
+                        }`}>
                         {formatNum(m.cantidad)}
                       </span>
                     </td>

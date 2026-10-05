@@ -10,6 +10,9 @@ interface Props {
     onCancelar: () => void
 }
 
+const inputClass =
+    'w-full border border-gray-200 px-3 py-2.5 rounded-xl text-base min-h-[44px] focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 transition-colors'
+
 export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
     const supabase = createClient()
     const [nombre, setNombre] = useState('')
@@ -43,7 +46,6 @@ export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
                 .select()
                 .single()
 
-            // Manejo de UNIQUE (23505): otro usuario lo creó justo antes
             if (err && err.code === '23505') {
                 const { data: existente } = await supabase
                     .from('clientes')
@@ -75,56 +77,58 @@ export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
     }
 
     return (
-        <div className="border border-yellow-200 bg-yellow-50/50 rounded-xl p-4 mt-3">
+        <div className="border border-yellow-200 bg-yellow-50/50 rounded-2xl p-4 mt-3">
             <div className="mb-3">
                 <p className="text-sm font-semibold text-yellow-700">⚠️ Cliente no encontrado</p>
-                <p className="text-xs text-gray-500 mt-1">Registra los datos para continuar</p>
+                <p className="text-xs text-[#828282] mt-1">Registra los datos para continuar</p>
             </div>
 
-            <div className="bg-white rounded-lg p-4 border border-gray-100 space-y-3">
+            <div className="bg-white rounded-xl p-4 border border-gray-100 space-y-3">
                 <div>
-                    <label className="block text-xs text-gray-500 mb-1">CC / NIT</label>
+                    <label className="block text-xs text-[#828282] mb-1">CC / NIT</label>
                     <input
-                        className="w-full border border-gray-200 p-2 rounded-lg text-sm bg-gray-50"
+                        className={`${inputClass} bg-gray-50`}
                         value={ccNit}
                         disabled
                     />
                 </div>
                 <div>
-                    <label className="block text-xs text-gray-500 mb-1">Nombre *</label>
+                    <label className="block text-xs text-[#828282] mb-1">Nombre *</label>
                     <input
-                        className="w-full border border-gray-200 p-2 rounded-lg text-sm focus:border-[#1A0087] focus:outline-none"
+                        className={inputClass}
                         placeholder="Nombre completo"
                         value={nombre}
                         onChange={(e) => setNombre(e.target.value)}
                         autoFocus
                     />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                        <label className="block text-xs text-gray-500 mb-1">Teléfono</label>
+                        <label className="block text-xs text-[#828282] mb-1">Teléfono</label>
                         <input
-                            className="w-full border border-gray-200 p-2 rounded-lg text-sm focus:border-[#1A0087] focus:outline-none"
+                            className={inputClass}
                             placeholder="300 123 4567"
                             value={telefono}
                             onChange={(e) => setTelefono(e.target.value)}
+                            inputMode="tel"
                         />
                     </div>
                     <div>
-                        <label className="block text-xs text-gray-500 mb-1">Email</label>
+                        <label className="block text-xs text-[#828282] mb-1">Email</label>
                         <input
-                            className="w-full border border-gray-200 p-2 rounded-lg text-sm focus:border-[#1A0087] focus:outline-none"
+                            className={inputClass}
                             placeholder="cliente@email.com"
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
+                            inputMode="email"
                         />
                     </div>
                 </div>
                 <div>
-                    <label className="block text-xs text-gray-500 mb-1">Dirección</label>
+                    <label className="block text-xs text-[#828282] mb-1">Dirección</label>
                     <input
-                        className="w-full border border-gray-200 p-2 rounded-lg text-sm focus:border-[#1A0087] focus:outline-none"
+                        className={inputClass}
                         placeholder="Dirección"
                         value={direccion}
                         onChange={(e) => setDireccion(e.target.value)}
@@ -139,7 +143,7 @@ export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
                     type="button"
                     onClick={onCancelar}
                     disabled={guardando}
-                    className="flex-1 px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="flex-1 min-h-[44px] px-4 py-2.5 text-sm border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 active:scale-[0.98] disabled:opacity-50 transition-all"
                 >
                     Cancelar
                 </button>
@@ -147,7 +151,7 @@ export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
                     type="button"
                     onClick={handleCrear}
                     disabled={guardando || !nombre.trim()}
-                    className="flex-1 px-4 py-2 text-sm bg-[#1A0087] text-white rounded-lg hover:bg-[#130066] disabled:opacity-50 font-medium"
+                    className="flex-1 min-h-[44px] px-4 py-2.5 text-sm bg-[#1A0087] text-white rounded-xl hover:bg-[#130066] active:scale-[0.98] disabled:opacity-50 font-medium transition-all"
                 >
                     {guardando ? 'Creando...' : 'Crear y continuar'}
                 </button>

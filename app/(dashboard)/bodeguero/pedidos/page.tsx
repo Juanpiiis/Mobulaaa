@@ -2,6 +2,10 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTienda } from '@/lib/context/TiendaContext'
+import { CotizacionPreview } from '@/components/cotizaciones/CotizacionPreview'
+import { CotizacionBadge } from '@/components/cotizaciones/CotizacionBadge'
+import { getEstadoCotizacion } from '@/lib/utils/cotizacion'
+import { DocumentTextIcon } from '@heroicons/react/24/outline'
 
 interface DetallePedido {
   id: string
@@ -20,6 +24,7 @@ interface Pedido {
   descuento_valor: number
   total: number
   numero_factura: string
+  numero_cotizacion: string | null
   usuarios: { nombre: string }
   bodegas: { id: string; nombre: string }
   detalle_pedido: DetallePedido[]
@@ -74,6 +79,7 @@ export default function PedidosBodegueroPage() {
   const [despachando, setDespachando] = useState<string | null>(null)
   const [editando, setEditando] = useState<string | null>(null)
   const [cantidadesEdit, setCantidadesEdit] = useState<Record<string, number>>({})
+  const [verCotizacion, setVerCotizacion] = useState<string | null>(null)
   const { tiendaActual } = useTienda()
   const supabase = createClient()
 
@@ -219,7 +225,10 @@ export default function PedidosBodegueroPage() {
                         <p className="text-sm text-gray-500">{new Date(p.fecha).toLocaleDateString()}</p>
                         {p.observacion && <p className="text-sm italic">{p.observacion}</p>}
                       </div>
-                      <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                        <CotizacionBadge estado={getEstadoCotizacion(p.estado)} size="sm" />
+                      </div>
                     </div>
 
                     <EstadoBarra estado={p.estado} />
@@ -252,7 +261,11 @@ export default function PedidosBodegueroPage() {
                           {p.detalle_pedido.map((d, i) => (
                             <p key={i} className="text-sm">• {d.productos?.nombre} x{d.cantidad_solicitada}</p>
                           ))}
-                          <div className="flex gap-2 mt-3">
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            <button onClick={() => setVerCotizacion(p.id)} className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] px-4 py-2 rounded text-sm hover:bg-[#1A0087]/20 font-medium">
+                              <DocumentTextIcon className="w-4 h-4" />
+                              Ver cotización
+                            </button>
                             <button onClick={() => iniciarEdicion(p)} className="bg-yellow-400 text-white px-4 py-2 rounded text-sm hover:bg-yellow-500">
                               ✏️ Editar
                             </button>
@@ -284,13 +297,22 @@ export default function PedidosBodegueroPage() {
                         <p className="font-medium">Vendedor: {p.usuarios?.nombre}</p>
                         <p className="text-sm text-gray-500">{new Date(p.fecha).toLocaleDateString()}</p>
                       </div>
-                      <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                        <CotizacionBadge estado={getEstadoCotizacion(p.estado)} size="sm" />
+                      </div>
                     </div>
                     <EstadoBarra estado={p.estado} />
                     <div className="border-t pt-3">
                       {p.detalle_pedido.map((d, i) => (
                         <p key={i} className="text-sm text-gray-500">• {d.productos?.nombre} x{d.cantidad_solicitada}</p>
                       ))}
+                    </div>
+                    <div className="flex gap-2 mt-3">
+                      <button onClick={() => setVerCotizacion(p.id)} className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] px-4 py-2 rounded text-sm hover:bg-[#1A0087]/20 font-medium">
+                        <DocumentTextIcon className="w-4 h-4" />
+                        Ver cotización
+                      </button>
                     </div>
                     <p className="text-xs text-gray-400 mt-2 italic">Esperando aprobación de cartera</p>
                   </div>
@@ -311,8 +333,12 @@ export default function PedidosBodegueroPage() {
                         <p className="font-medium">Vendedor: {p.usuarios?.nombre}</p>
                         <p className="text-sm text-gray-500">{new Date(p.fecha).toLocaleDateString()}</p>
                         {p.numero_factura && <p className="text-sm text-blue-600 font-medium">{p.numero_factura}</p>}
+                        {p.numero_cotizacion && <p className="text-xs font-mono text-[#1A0087]">{p.numero_cotizacion}</p>}
                       </div>
-                      <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
+                        <CotizacionBadge estado={getEstadoCotizacion(p.estado)} numeroCotizacion={p.numero_cotizacion} size="sm" />
+                      </div>
                     </div>
                     <EstadoBarra estado={p.estado} />
                     {p.total > 0 && (
@@ -343,7 +369,13 @@ export default function PedidosBodegueroPage() {
                         {p.detalle_pedido.map((d, i) => (
                           <p key={i} className="text-sm">• {d.productos?.nombre} x{d.cantidad_solicitada}</p>
                         ))}
-                        <button onClick={() => iniciarDespacho(p)} className="mt-3 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">Despachar pedido</button>
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          <button onClick={() => setVerCotizacion(p.id)} className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] px-4 py-2 rounded text-sm hover:bg-[#1A0087]/20 font-medium">
+                            <DocumentTextIcon className="w-4 h-4" />
+                            Ver cotización
+                          </button>
+                          <button onClick={() => iniciarDespacho(p)} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">Despachar pedido</button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -363,6 +395,7 @@ export default function PedidosBodegueroPage() {
                       <p className="font-medium">Vendedor: {p.usuarios?.nombre}</p>
                       <p className="text-sm text-gray-500">{new Date(p.fecha).toLocaleDateString()}</p>
                       {p.numero_factura && <p className="text-sm text-blue-600">{p.numero_factura}</p>}
+                      {p.numero_cotizacion && <p className="text-xs font-mono text-[#1A0087]">{p.numero_cotizacion}</p>}
                       {p.detalle_pedido.map((d, i) => (
                         <p key={i} className="text-sm text-gray-600">• {d.productos?.nombre} x{d.cantidad_solicitada}{d.cantidad_aprobada !== null && ` → despachado: ${d.cantidad_aprobada}`}</p>
                       ))}
@@ -376,11 +409,25 @@ export default function PedidosBodegueroPage() {
                     </div>
                   </div>
                   <EstadoBarra estado={p.estado} />
+                  <div className="flex gap-2 mt-2">
+                    <button onClick={() => setVerCotizacion(p.id)} className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] px-3 py-1.5 rounded text-xs hover:bg-[#1A0087]/20 font-medium">
+                      <DocumentTextIcon className="w-3.5 h-3.5" />
+                      Ver cotización
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         </>
+      )}
+
+      {/* Modal de cotización */}
+      {verCotizacion && (
+        <CotizacionPreview
+          pedidoId={verCotizacion}
+          onClose={() => setVerCotizacion(null)}
+        />
       )}
     </div>
   )
