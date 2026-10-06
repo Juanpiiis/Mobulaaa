@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
             fechaVencimiento: calcularVencimiento(pedido.fecha),
         }
 
-        // 5. Generar PDF
+        // 5. Generar PDF (SIEMPRE se genera)
         const pdfBuffer = await renderToBuffer(
             React.createElement(CotizacionDocument, { data: pdfData }) as any
         )
@@ -114,15 +114,23 @@ export async function POST(req: NextRequest) {
         const nombreSubcarpeta = `${meses[fecha.getMonth()]} ${fecha.getFullYear()}`
         const nombreArchivo = `${pedido.numero_cotizacion}.pdf`
 
-        // 7. Subir a Drive
-        const subcarpetaId = await buscarOCrearSubcarpeta(nombreSubcarpeta)
-        const { fileId, url } = await subirPDFaDrive(
-            nombreArchivo,
-            pdfBuffer,
-            subcarpetaId
-        )
+        // 7. Intentar subir a Drive (OPCIONAL)
+        let fileId: string | null = null
+        let url: string | null = null
+        let driveError: string | null = null
 
-        // 8. Guardar en BD
+        try {
+            const subcarpetaId = await buscarOCrearSubcarpeta(nombreSubcarpeta)
+            const subida = await subirPDFaDrive(nombreArchivo, pdfBuffer, subcarpetaId)
+            fileId = subida.fileId
+            url = subida.url
+            console.log('✅ PDF subido a Drive:', url)
+        } catch (err: any) {
+            driveError = err?.message || 'Error desconocido subiendo a Drive'
+            console.warn('⚠️ Drive falló, pero el PDF se entrega igual:', driveError)
+        }
+
+        // 8. Guardar en BD (con o sin datos de Drive)
         const { error: errUpdate } = await supabase
             .from('pedidos')
             .update({
@@ -132,24 +140,21 @@ export async function POST(req: NextRequest) {
             .eq('id', pedidoId)
 
         if (errUpdate) {
-            console.error('Error guardando link:', errUpdate)
-            return NextResponse.json(
-                {
-                    error: 'PDF subido pero no se pudo guardar el link en la BD',
-                    url,
-                    fileId,
-                },
-                { status: 500 }
-            )
+            console.error('Error guardando link en BD:', errUpdate)
         }
+
+        // 9. Devolver JSON con el PDF en base64 (así el frontend puede descargarlo sin problemas)
+        const pdfBase64 = pdfBuffer.toString('base64')
 
         return NextResponse.json({
             ok: true,
             url,
             fileId,
+            driveError,
             numeroCotizacion: pedido.numero_cotizacion,
             subcarpeta: nombreSubcarpeta,
             nombreArchivo,
+            pdfBase64,
         })
     } catch (error: any) {
         console.error('Error generando cotización:', error)

@@ -6,15 +6,19 @@ import { calcularDescuento, DESCUENTOS } from '@/types/index'
 import { ClienteSelector } from '@/components/pedidos/ClienteSelector'
 import { HistorialClienteModal } from '@/components/pedidos/HistorialClienteModal'
 import { ProductoSelector } from '@/components/pedidos/ProductoSelector'
+import { ProductoBuscadorModal } from '@/components/pedidos/ProductoBuscadorModal'
+import { PedidoDetalleModal, type PedidoCompleto } from '@/components/pedidos/PedidoDetalleModal'
+import { PedidoCardCompacta } from '@/components/pedidos/PedidoCardCompacta'
 import type { Cliente } from '@/types/clientes'
 import type { ProductoBusqueda } from '@/lib/hooks/useBuscarProducto'
 import {
   XMarkIcon,
-  UserIcon,
   ShoppingBagIcon,
   CheckIcon,
   ChevronLeftIcon,
   PlusIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline'
 
 const STOCK_CONGELADO = 150
@@ -23,17 +27,21 @@ interface Pedido {
   id: string
   estado: string
   fecha: string
-  observacion: string
+  observacion: string | null
   subtotal: number
   descuento_porcentaje: number
   descuento_valor: number
   total: number
-  numero_factura: string
-  bodegas: { nombre: string }
+  numero_factura: string | null
+  numero_cotizacion: string | null
+  revertido: boolean
+  bodegas: { nombre: string } | null
+  clientes: { nombre: string; cc_nit: string } | null
+  usuarios: { nombre: string } | null
   detalle_pedido: {
     cantidad_solicitada: number
     cantidad_aprobada: number | null
-    productos: { nombre: string; precio: number }
+    productos: { nombre: string; precio: number; codigo: string | null }
   }[]
 }
 
@@ -42,59 +50,21 @@ interface ItemPedido {
   cantidad: string
 }
 
-/* ────────────────────────────────────────── */
-const EstadoBarra = ({ estado }: { estado: string }) => {
-  const pasos = [
-    { key: 'pendiente', label: 'Enviado' },
-    { key: 'aprobado_bodega', label: 'Bodega' },
-    { key: 'aprobado_cartera', label: 'Cartera' },
-    { key: 'despachado', label: 'Despachado' },
-    { key: 'entregado', label: 'Entregado' },
-  ]
+const MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+]
 
-  if (estado === 'rechazado_bodega' || estado === 'rechazado_cartera') {
-    return (
-      <div className="my-3">
-        <span className="inline-block bg-red-50 text-red-700 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-medium">
-          ❌ {estado === 'rechazado_bodega' ? 'Rechazado por bodega' : 'Rechazado por cartera'}
-        </span>
-      </div>
-    )
-  }
-
-  const pasoActual = pasos.findIndex((p) => p.key === estado)
-
-  return (
-    <div className="flex items-center my-4 overflow-x-auto pb-1 -mx-1 px-1">
-      {pasos.map((paso, i) => (
-        <div key={paso.key} className="flex items-center shrink-0">
-          <div className="flex flex-col items-center">
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${i <= pasoActual ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-400'
-                }`}
-            >
-              {i <= pasoActual ? '✓' : i + 1}
-            </div>
-            <span
-              className={`text-[10px] mt-1.5 whitespace-nowrap font-medium ${i <= pasoActual ? 'text-green-600' : 'text-gray-400'
-                }`}
-            >
-              {paso.label}
-            </span>
-          </div>
-          {i < pasos.length - 1 && (
-            <div
-              className={`h-0.5 w-6 sm:w-10 mx-1.5 mb-5 rounded ${i < pasoActual ? 'bg-green-500' : 'bg-gray-200'
-                }`}
-            />
-          )}
-        </div>
-      ))}
-    </div>
-  )
+function getMesKey(fechaISO: string) {
+  const d = new Date(fechaISO)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-/* ────────────────────────────────────────── */
+function getMesLabel(fechaISO: string) {
+  const d = new Date(fechaISO)
+  return `${MESES[d.getMonth()]} ${d.getFullYear()}`
+}
+
 export default function MisPedidosPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [productos, setProductos] = useState<ProductoBusqueda[]>([])
@@ -105,8 +75,12 @@ export default function MisPedidosPage() {
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
   const [mostrarHistorial, setMostrarHistorial] = useState(false)
   const [paso, setPaso] = useState<'cliente' | 'productos'>('cliente')
-  const [items, setItems] = useState<ItemPedido[]>([{ producto_id: '', cantidad: '1' }])
+  const [items, setItems] = useState<ItemPedido[]>([])
   const [errorStock, setErrorStock] = useState<string | null>(null)
+  const [productoBuscadorAbierto, setProductoBuscadorAbierto] = useState(false)
+  const [pedidoAbierto, setPedidoAbierto] = useState<string | null>(null)
+  const [mesesAbiertos, setMesesAbiertos] = useState<Record<string, boolean>>({})
+
   const { tiendaActual } = useTienda()
   const supabase = createClient()
 
@@ -123,11 +97,12 @@ export default function MisPedidosPage() {
     const { data: p } = await supabase
       .from('pedidos')
       .select(
-        '*, bodegas(nombre), detalle_pedido(cantidad_solicitada, cantidad_aprobada, productos(nombre, precio))'
+        '*, bodegas(nombre), clientes(nombre, cc_nit), usuarios(nombre), detalle_pedido(cantidad_solicitada, cantidad_aprobada, productos(nombre, precio, codigo))'
       )
       .eq('vendedor_id', user?.id)
       .eq('bodega_id', tiendaActual.id)
       .order('fecha', { ascending: false })
+
     const { data: prod } = await supabase
       .from('inventario')
       .select(`
@@ -137,7 +112,7 @@ export default function MisPedidosPage() {
       .eq('bodega_id', tiendaActual.id)
       .gt('cantidad_disponible', 0)
 
-    setPedidos(p || [])
+    setPedidos((p as unknown as Pedido[]) || [])
     setProductos(
       prod
         ?.map((i: any) => ({
@@ -259,21 +234,26 @@ export default function MisPedidosPage() {
 
   const resetModal = () => {
     setIsModalOpen(false)
-    setItems([{ producto_id: '', cantidad: '1' }])
+    setItems([])
     setObservacion('')
     setClienteSeleccionado(null)
     setPaso('cliente')
     setErrorStock(null)
+    setProductoBuscadorAbierto(false)
   }
 
-  const handleSelectProducto = (index: number, p: ProductoBusqueda) => {
-    setItems(items.map((it, idx) => (idx === index ? { ...it, producto_id: p.id, cantidad: '1' } : it)))
+  const handleAgregarProducto = (p: ProductoBusqueda) => {
+    setItems([...items, { producto_id: p.id, cantidad: '1' }])
     setErrorStock(null)
   }
 
   const handleCantidadChange = (index: number, cantidad: string) => {
     setItems(items.map((it, idx) => (idx === index ? { ...it, cantidad } : it)))
     setErrorStock(null)
+  }
+
+  const handleEliminarItem = (index: number) => {
+    setItems(items.filter((_, idx) => idx !== index))
   }
 
   const estadoLabel: Record<string, string> = {
@@ -284,6 +264,7 @@ export default function MisPedidosPage() {
     rechazado_cartera: 'Rechazado cartera',
     despachado: 'Despachado',
     entregado: 'Entregado',
+    cancelado: 'Cancelado',
   }
 
   const estadoColor: Record<string, string> = {
@@ -294,11 +275,56 @@ export default function MisPedidosPage() {
     rechazado_cartera: 'bg-red-50 text-red-700 border-red-200',
     despachado: 'bg-purple-50 text-purple-700 border-purple-200',
     entregado: 'bg-gray-100 text-gray-700 border-gray-200',
+    cancelado: 'bg-red-50 text-red-700 border-red-200',
   }
+
+  // ─────────────────────────────────────────────────────
+  // Separación: En proceso vs Historial
+  // ─────────────────────────────────────────────────────
+  const enProceso = useMemo(
+    () => pedidos.filter(p => ['pendiente', 'aprobado_bodega', 'aprobado_cartera'].includes(p.estado)),
+    [pedidos]
+  )
+
+  const historial = useMemo(
+    () => pedidos.filter(p => ['despachado', 'entregado', 'rechazado_bodega', 'rechazado_cartera', 'cancelado'].includes(p.estado)),
+    [pedidos]
+  )
+
+  const historialPorMes = useMemo(() => {
+    const grupos: Record<string, Pedido[]> = {}
+    historial.forEach(p => {
+      const key = getMesKey(p.fecha)
+      if (!grupos[key]) grupos[key] = []
+      grupos[key].push(p)
+    })
+    return Object.entries(grupos).sort(([a], [b]) => b.localeCompare(a))
+  }, [historial])
+
+  useEffect(() => {
+    if (historialPorMes.length > 0) {
+      setMesesAbiertos(prev => {
+        const nuevo = { ...prev }
+        if (Object.keys(nuevo).length === 0) {
+          nuevo[historialPorMes[0][0]] = true
+        }
+        return nuevo
+      })
+    }
+  }, [historialPorMes.length])
+
+  const toggleMes = (key: string) => {
+    setMesesAbiertos(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const pedidoActual = pedidos.find(p => p.id === pedidoAbierto) || null
+
+  // IDs de productos ya agregados (para excluirlos del buscador)
+  const productosExcluidos = items.map(i => i.producto_id).filter(Boolean)
 
   /* ────────────────────────────────────────── */
   return (
-    <div className="min-h-screen bg-[#F7F7F9]">
+    <div className="min-h-screen bg-[#F7F7FB]">
       {/* HEADER */}
       <header className="sticky top-0 z-20 bg-white border-b border-gray-100">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -307,7 +333,10 @@ export default function MisPedidosPage() {
             <p className="text-xs text-[#828282] truncate">{tiendaActual?.nombre}</p>
           </div>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              setItems([])
+              setIsModalOpen(true)
+            }}
             className="shrink-0 bg-[#1A0087] text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-[#130066] active:scale-[0.98] transition-transform shadow-sm"
           >
             + Nuevo
@@ -333,82 +362,86 @@ export default function MisPedidosPage() {
             </button>
           </div>
         ) : (
-          <div className="space-y-3">
-            {pedidos.map((p) => (
-              <article
-                key={p.id}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
-              >
-                <div className="p-4">
-                  <div className="flex items-start justify-between gap-3 mb-1">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-[#232323] truncate">
-                        {p.bodegas?.nombre}
-                      </p>
-                      <p className="text-xs text-[#828282] mt-0.5">
-                        {new Date(p.fecha).toLocaleDateString('es-CO', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
-                      </p>
-                    </div>
-                    <span
-                      className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium border ${estadoColor[p.estado] || 'bg-gray-100 text-gray-700 border-gray-200'
-                        }`}
-                    >
-                      {estadoLabel[p.estado] || p.estado}
-                    </span>
-                  </div>
-
-                  {p.numero_factura && (
-                    <p className="text-xs text-[#1A0087] font-medium mt-1">
-                      {p.numero_factura}
-                    </p>
-                  )}
-                  {p.observacion && (
-                    <p className="text-xs italic text-gray-500 mt-1">"{p.observacion}"</p>
-                  )}
-
-                  <EstadoBarra estado={p.estado} />
-
-                  <div className="border-t border-gray-100 pt-3 space-y-1.5">
-                    {p.detalle_pedido?.map((d, i) => (
-                      <div key={i} className="flex justify-between gap-3 text-sm">
-                        <span className="text-[#232323] min-w-0 truncate">
-                          {d.productos?.nombre}
-                          <span className="text-[#828282] ml-1.5">×{d.cantidad_solicitada}</span>
-                        </span>
-                        <span className="text-[#828282] shrink-0 text-xs font-medium">
-                          {formatCOP((d.productos?.precio || 0) * d.cantidad_solicitada)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {p.total > 0 && (
-                    <div className="border-t border-gray-100 pt-3 mt-3 space-y-1">
-                      <div className="flex justify-between text-xs text-[#828282]">
-                        <span>Subtotal</span>
-                        <span>{formatCOP(p.subtotal)}</span>
-                      </div>
-                      {p.descuento_porcentaje > 0 && (
-                        <div className="flex justify-between text-xs text-green-600">
-                          <span>Descuento ({p.descuento_porcentaje}%)</span>
-                          <span>- {formatCOP(p.descuento_valor)}</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between items-baseline pt-1.5">
-                        <span className="text-sm font-semibold text-[#232323]">Total</span>
-                        <span className="text-base font-bold text-[#1A0087]">
-                          {formatCOP(p.total)}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+          <div className="space-y-8">
+            {/* EN PROCESO */}
+            {enProceso.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="text-base font-bold text-[#232323]">🔥 En proceso</h2>
+                  <span className="text-xs font-medium bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full">
+                    {enProceso.length}
+                  </span>
                 </div>
-              </article>
-            ))}
+                <div className="space-y-3">
+                  {enProceso.map(p => (
+                    <PedidoCardCompacta
+                      key={p.id}
+                      pedido={p}
+                      onClick={() => setPedidoAbierto(p.id)}
+                    />
+                  ))}
+                </div>
+                <div className="mt-3 bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
+                  <p className="text-[11px] text-[#828282] italic">
+                    Para cancelar un pedido en proceso, contacta con bodega
+                  </p>
+                </div>
+              </section>
+            )}
+
+            {/* HISTORIAL */}
+            {historial.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-3">
+                  <h2 className="text-base font-bold text-[#232323]">📚 Historial</h2>
+                  <span className="text-xs text-[#828282]">
+                    {historial.length} {historial.length === 1 ? 'pedido' : 'pedidos'}
+                  </span>
+                </div>
+                <div className="space-y-3">
+                  {historialPorMes.map(([mesKey, itemsMes]) => {
+                    const abierto = mesesAbiertos[mesKey] ?? false
+                    return (
+                      <div
+                        key={mesKey}
+                        className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+                      >
+                        <button
+                          onClick={() => toggleMes(mesKey)}
+                          className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            {abierto ? (
+                              <ChevronDownIcon className="w-4 h-4 text-[#828282]" />
+                            ) : (
+                              <ChevronRightIcon className="w-4 h-4 text-[#828282]" />
+                            )}
+                            <span className="font-semibold text-sm text-[#232323]">
+                              📅 {getMesLabel(itemsMes[0].fecha)}
+                            </span>
+                            <span className="text-xs text-[#828282]">
+                              ({itemsMes.length})
+                            </span>
+                          </div>
+                        </button>
+
+                        {abierto && (
+                          <div className="p-3 pt-0 space-y-2">
+                            {itemsMes.map(p => (
+                              <PedidoCardCompacta
+                                key={p.id}
+                                pedido={p}
+                                onClick={() => setPedidoAbierto(p.id)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </main>
@@ -422,10 +455,7 @@ export default function MisPedidosPage() {
               <div className="flex items-center gap-3 px-4 py-3">
                 {paso === 'productos' ? (
                   <button
-                    onClick={() => {
-                      setPaso('cliente')
-                      setClienteSeleccionado(null)
-                    }}
+                    onClick={() => setPaso('cliente')}
                     disabled={isSaving}
                     className="w-9 h-9 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors disabled:opacity-50"
                     aria-label="Atrás"
@@ -461,9 +491,7 @@ export default function MisPedidosPage() {
                       }`}
                   >
                     <div
-                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'cliente'
-                        ? 'bg-[#1A0087] text-white'
-                        : 'bg-green-500 text-white'
+                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'cliente' ? 'bg-[#1A0087] text-white' : 'bg-green-500 text-white'
                         }`}
                     >
                       {paso === 'cliente' ? '1' : <CheckIcon className="w-3 h-3" />}
@@ -479,9 +507,7 @@ export default function MisPedidosPage() {
                       }`}
                   >
                     <div
-                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'productos'
-                        ? 'bg-[#1A0087] text-white'
-                        : 'bg-gray-200 text-[#828282]'
+                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'productos' ? 'bg-[#1A0087] text-white' : 'bg-gray-200 text-[#828282]'
                         }`}
                     >
                       2
@@ -506,10 +532,12 @@ export default function MisPedidosPage() {
                       </p>
                     </div>
                     <ClienteSelector
+                      clienteSeleccionado={clienteSeleccionado}
                       onClienteSeleccionado={(c) => {
                         setClienteSeleccionado(c)
                         setPaso('productos')
                       }}
+                      onLimpiar={() => setClienteSeleccionado(null)}
                       onVerHistorial={(c) => {
                         setClienteSeleccionado(c)
                         setMostrarHistorial(true)
@@ -521,63 +549,57 @@ export default function MisPedidosPage() {
                 {paso === 'productos' && clienteSeleccionado && (
                   <>
                     {/* Cliente seleccionado */}
-                    <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-2xl p-3">
-                      <div className="w-10 h-10 shrink-0 rounded-full bg-green-500 flex items-center justify-center">
-                        <UserIcon className="w-5 h-5 text-white" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-[#232323] truncate">
-                          {clienteSeleccionado.nombre}
-                        </p>
-                        <p className="text-xs text-[#828282] truncate">
-                          CC/NIT: {clienteSeleccionado.cc_nit}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setPaso('cliente')
-                          setClienteSeleccionado(null)
-                        }}
-                        className="shrink-0 text-xs text-[#1A0087] font-medium hover:underline"
-                      >
-                        Cambiar
-                      </button>
-                    </div>
+                    <ClienteSelector
+                      clienteSeleccionado={clienteSeleccionado}
+                      onClienteSeleccionado={() => { }}
+                      onLimpiar={() => {
+                        setClienteSeleccionado(null)
+                        setPaso('cliente')
+                      }}
+                      onVerHistorial={() => setMostrarHistorial(true)}
+                    />
 
                     {/* Productos */}
                     <div>
-                      <div className="mb-3">
-                        <h3 className="text-sm font-semibold text-[#232323]">
-                          Productos
-                        </h3>
-                        <p className="text-xs text-[#828282] mt-0.5">
-                          {items.length} {items.length === 1 ? 'producto' : 'productos'} en el pedido
-                        </p>
+                      <div className="mb-3 flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#232323]">
+                            Productos
+                          </h3>
+                          <p className="text-xs text-[#828282] mt-0.5">
+                            {items.length} {items.length === 1 ? 'producto' : 'productos'} en el pedido
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="space-y-3">
-                        {items.map((item, i) => (
-                          <ProductoSelector
-                            key={i}
-                            index={i}
-                            item={item}
-                            productosBase={productos}
-                            bodegaId={tiendaActual?.id}
-                            onSelectProducto={handleSelectProducto}
-                            onCantidadChange={handleCantidadChange}
-                            onEliminar={(idx) => setItems(items.filter((_, k) => k !== idx))}
-                            mostrarEliminar={items.length > 1}
-                            formatCOP={formatCOP}
-                          />
-                        ))}
-                      </div>
+                      {/* Lista de items */}
+                      {items.length > 0 && (
+                        <div className="space-y-3 mb-3">
+                          {items.map((item, i) => {
+                            const prod = productos.find(p => p.id === item.producto_id)
+                            if (!prod) return null
+                            return (
+                              <ProductoSelector
+                                key={i}
+                                index={i}
+                                producto={prod}
+                                cantidad={item.cantidad}
+                                onCantidadChange={handleCantidadChange}
+                                onEliminar={handleEliminarItem}
+                                formatCOP={formatCOP}
+                              />
+                            )
+                          })}
+                        </div>
+                      )}
 
+                      {/* Botón agregar */}
                       <button
-                        onClick={() => setItems([...items, { producto_id: '', cantidad: '1' }])}
-                        className="mt-3 w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-[#1A0087]/30 rounded-2xl text-sm font-medium text-[#1A0087] hover:bg-[#1A0087]/5 active:bg-[#1A0087]/10 transition-colors"
+                        onClick={() => setProductoBuscadorAbierto(true)}
+                        className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-[#1A0087]/30 rounded-2xl text-sm font-medium text-[#1A0087] hover:bg-[#1A0087]/5 active:bg-[#1A0087]/10 transition-colors"
                       >
                         <PlusIcon className="w-4 h-4" />
-                        Agregar otro producto
+                        Agregar producto
                       </button>
                     </div>
 
@@ -657,9 +679,7 @@ export default function MisPedidosPage() {
               </button>
 
               {paso === 'productos' && (() => {
-                const sinProductos = items.every(
-                  (it) => !it.producto_id || !it.cantidad || parseInt(it.cantidad) <= 0
-                )
+                const sinProductos = items.length === 0
                 const disabled =
                   isSaving || hayProductoCongelado || sinProductos || !clienteSeleccionado
                 const label = isSaving
@@ -676,8 +696,8 @@ export default function MisPedidosPage() {
                     onClick={handleSave}
                     disabled={disabled}
                     className={`flex-1 px-5 py-3 rounded-xl text-sm font-semibold text-white transition-all shadow-sm ${disabled
-                      ? 'bg-gray-300 cursor-not-allowed'
-                      : 'bg-[#1A0087] hover:bg-[#130066] active:scale-[0.98]'
+                        ? 'bg-gray-300 cursor-not-allowed'
+                        : 'bg-[#1A0087] hover:bg-[#130066] active:scale-[0.98]'
                       }`}
                   >
                     {label}
@@ -689,10 +709,32 @@ export default function MisPedidosPage() {
         </div>
       )}
 
+      {/* MODAL BUSCADOR DE PRODUCTO */}
+      <ProductoBuscadorModal
+        abierto={productoBuscadorAbierto}
+        onClose={() => setProductoBuscadorAbierto(false)}
+        onSeleccionar={handleAgregarProducto}
+        productosBase={productos}
+        bodegaId={tiendaActual?.id}
+        formatCOP={formatCOP}
+        productosExcluidos={productosExcluidos}
+      />
+
+      {/* MODAL HISTORIAL CLIENTE */}
       {mostrarHistorial && clienteSeleccionado && (
         <HistorialClienteModal
           cliente={clienteSeleccionado}
           onClose={() => setMostrarHistorial(false)}
+        />
+      )}
+
+      {/* MODAL DETALLE PEDIDO */}
+      {pedidoActual && (
+        <PedidoDetalleModal
+          pedido={pedidoActual as unknown as PedidoCompleto}
+          onClose={() => setPedidoAbierto(null)}
+          onRefresh={fetchOrders}
+          rolActual="vendedor"
         />
       )}
     </div>

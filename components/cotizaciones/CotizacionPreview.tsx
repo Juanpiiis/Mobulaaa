@@ -109,10 +109,30 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
                 return
             }
 
+            // Descargar el PDF desde base64
+            if (data.pdfBase64) {
+                const byteCharacters = atob(data.pdfBase64)
+                const byteArray = new Uint8Array(byteCharacters.length)
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteArray[i] = byteCharacters.charCodeAt(i)
+                }
+                const blob = new Blob([byteArray], { type: 'application/pdf' })
+                const url = window.URL.createObjectURL(blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = data.nombreArchivo || 'cotizacion.pdf'
+                document.body.appendChild(a)
+                a.click()
+                a.remove()
+                window.URL.revokeObjectURL(url)
+            }
+
+            // Si Drive subió bien, avisar
             if (data.url) {
-                window.open(data.url, '_blank')
-                // Recargar datos para mostrar el botón "Ver PDF en Drive"
-                window.location.reload()
+                // Recargar para mostrar el botón "Ver PDF en Drive"
+                setTimeout(() => window.location.reload(), 500)
+            } else if (data.driveError) {
+                console.warn('Drive falló:', data.driveError)
             }
         } catch (e: any) {
             alert('Error: ' + e.message)

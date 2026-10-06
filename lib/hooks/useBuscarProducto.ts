@@ -27,7 +27,7 @@ export function useBuscarProducto(
 
     useEffect(() => {
         if (!debounced || debounced.length < 2) {
-            setResultados(productosBase.slice(0, 10))
+            setResultados(productosBase)
             setBuscando(false)
             return
         }
@@ -40,13 +40,14 @@ export function useBuscarProducto(
                 const { data } = await supabase
                     .from('inventario')
                     .select(`
-    cantidad_disponible,
-    productos!inner(id, nombre, precio, categoria, sku)
-  `)
+                        cantidad_disponible,
+                        productos!inner(id, nombre, precio, categoria, sku)
+                    `)
                     .eq('bodega_id', bodegaId)
                     .gt('cantidad_disponible', 0)
-                    .ilike('productos.nombre', `%${debounced}%`)
-                    .limit(15)
+                    .or(`nombre.ilike.%${debounced}%,sku.ilike.%${debounced}%`, { foreignTable: 'productos' })
+                    .limit(50)
+
                 if (currentRequestId !== requestIdRef.current) return
 
                 const items: ProductoBusqueda[] =

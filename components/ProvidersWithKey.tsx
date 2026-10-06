@@ -3,18 +3,17 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { TiendaProvider } from '@/lib/context/TiendaContext'
+import { ThemeProvider } from '@/lib/context/ThemeContext'
 
 export function ProvidersWithKey({ children }: { children: React.ReactNode }) {
     const [userId, setUserId] = useState<string | null>(null)
     const supabase = createClient()
 
     useEffect(() => {
-        // 1. Cargar usuario inicial
         supabase.auth.getUser().then(({ data }) => {
             setUserId(data.user?.id || null)
         })
 
-        // 2. Escuchar cambios de sesión (login / logout)
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setUserId(session?.user?.id || null)
         })
@@ -22,11 +21,11 @@ export function ProvidersWithKey({ children }: { children: React.ReactNode }) {
         return () => subscription.unsubscribe()
     }, [supabase])
 
-    // 🔑 El key hace que TiendaProvider se desmonte y remonte
-    // cuando cambia el usuario → reinicia los timers de inactividad
     return (
-        <TiendaProvider key={userId || 'no-user'}>
-            {children}
-        </TiendaProvider>
+        <ThemeProvider>
+            <TiendaProvider key={userId || 'no-user'}>
+                {children}
+            </TiendaProvider>
+        </ThemeProvider>
     )
 }

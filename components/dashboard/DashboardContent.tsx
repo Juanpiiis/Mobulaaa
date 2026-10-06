@@ -6,12 +6,14 @@ import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { useTienda } from '@/lib/context/TiendaContext'
 import { useNotificaciones } from '@/lib/context/NotificacionesContext'
+import { useTheme } from '@/lib/context/ThemeContext'
 import {
   HomeIcon, CubeIcon, BuildingStorefrontIcon, UsersIcon,
   ArrowsRightLeftIcon, ClipboardDocumentListIcon, ChartBarIcon,
   ArrowLeftOnRectangleIcon, ShoppingCartIcon, CreditCardIcon,
   DocumentTextIcon, BeakerIcon, CalculatorIcon, ClipboardIcon,
-  ChevronDownIcon, BellIcon, PlusIcon
+  ChevronDownIcon, BellIcon, PlusIcon,
+  SunIcon, MoonIcon,
 } from '@heroicons/react/24/outline'
 
 /* ============================================================
@@ -64,6 +66,29 @@ const navigationConfig = {
 }
 
 /* ============================================================
+   Componente: Botón de cambio de tema (claro / oscuro)
+   ============================================================ */
+function BotonTema() {
+  const { tema, toggleTema } = useTheme()
+  const esOscuro = tema === 'dark'
+
+  return (
+    <button
+      onClick={toggleTema}
+      className="w-11 h-11 flex items-center justify-center rounded-xl text-gray-600 hover:bg-gray-100 active:scale-[0.98] transition-colors dark:text-gray-300 dark:hover:bg-gray-800"
+      aria-label={esOscuro ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+      title={esOscuro ? 'Modo claro' : 'Modo oscuro'}
+    >
+      {esOscuro ? (
+        <SunIcon className="w-5 h-5" />
+      ) : (
+        <MoonIcon className="w-5 h-5" />
+      )}
+    </button>
+  )
+}
+
+/* ============================================================
    Componente: Campana de Notificaciones
    ============================================================ */
 function Campana() {
@@ -94,7 +119,7 @@ function Campana() {
       </button>
 
       {isOpen && (
-        <div className="campana-panel z-50 max-w-[calc(100vw-1.5rem)] right-0 shadow-2xl rounded-xl border border-gray-200">
+        <div className="campana-panel z-50 max-w-[calc(100vw-1.5rem)] right-0 shadow-2xl rounded-xl border border-gray-200 dark:border-gray-700">
           <div className="campana-panel__header">
             <p className="campana-panel__title">Notificaciones</p>
             {noLeidas > 0 && (
@@ -281,6 +306,7 @@ export default function DashboardContent({ children, rol }: { children: React.Re
           </div>
 
           <div className="topbar-right">
+            <BotonTema />
             <Campana />
             <div className="user-avatar">
               {rol.charAt(0).toUpperCase()}
@@ -289,12 +315,6 @@ export default function DashboardContent({ children, rol }: { children: React.Re
         </header>
 
         <main className="dashboard-main">
-          {/*
-            ✅ FIX: NO bloquear si:
-            - Ya hay bodega seleccionada
-            - Estamos en /admin/bodegas (para poder crear la primera)
-            - Hay 0 bodegas (para permitir crear la primera)
-          */}
           {(!tiendaActual && !esPaginaBodegas && bodegas.length > 0) ? (
             <div className="empty-state">
               <div className="empty-state__card">

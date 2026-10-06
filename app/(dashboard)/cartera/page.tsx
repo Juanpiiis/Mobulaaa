@@ -1,331 +1,376 @@
 'use client'
-import { useState, useEffect } from 'react'
+
+import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTienda } from '@/lib/context/TiendaContext'
-import { calcularDescuento } from '@/types/index'
 import { CotizacionPreview } from '@/components/cotizaciones/CotizacionPreview'
-import { CotizacionBadge } from '@/components/cotizaciones/CotizacionBadge'
+import { PedidoDetalleModal, type PedidoCompleto } from '@/components/pedidos/PedidoDetalleModal'
+import { PedidoCardCompacta, type PedidoCompacto } from '@/components/pedidos/PedidoCardCompacta'
 import {
-  getEstadoCotizacion,
-  generarNumeroCotizacion,
-  generarNumeroFactura,
-} from '@/lib/utils/cotizacion'
-import { DocumentTextIcon } from '@heroicons/react/24/outline'
+  FiltrosModal,
+  FiltrosChips,
+  FILTROS_INICIALES,
+  type FiltrosValores,
+} from '@/components/pedidos/FiltrosModal'
+import {
+  FunnelIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ClipboardDocumentListIcon,
+} from '@heroicons/react/24/outline'
 
-interface DetallePedido {
-  id: string
-  cantidad_solicitada: number
-  productos: { nombre: string; precio: number }
+type Pedido = PedidoCompleto & PedidoCompacto
+
+const MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+]
+
+function getMesKey(fechaISO: string) {
+  const d = new Date(fechaISO)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-interface Pedido {
-  id: string
-  estado: string
-  fecha: string
-  observacion: string
-  subtotal: number
-  descuento_porcentaje: number
-  descuento_valor: number
-  total: number
-  numero_factura: string
-  numero_cotizacion: string | null
-  usuarios: { nombre: string; email: string }
-  bodegas: { nombre: string }
-  detalle_pedido: DetallePedido[]
+function getMesLabel(fechaISO: string) {
+  const d = new Date(fechaISO)
+  return `${MESES[d.getMonth()]} ${d.getFullYear()}`
 }
 
-const EstadoBarra = ({ estado }: { estado: string }) => {
-  const pasos = [
-    { key: 'pendiente', label: 'Pedido' },
-    { key: 'aprobado_bodega', label: 'Bodega' },
-    { key: 'aprobado_cartera', label: 'Cartera' },
-    { key: 'despachado', label: 'Despachado' },
-    { key: 'entregado', label: 'Entregado' },
-  ]
+function estaEnRango(fechaISO: string, rango: 'hoy' | '7d' | '30d' | 'mes' | 'todo') {
+  if (rango === 'todo') return true
+  const fecha = new Date(fechaISO)
+  const ahora = new Date()
+  const ms = 1000 * 60 * 60 * 24
 
-  const cancelado = estado === 'rechazado_bodega' || estado === 'rechazado_cartera'
-  const pasoActual = pasos.findIndex(p => p.key === estado)
-
-  if (cancelado) {
+  if (rango === 'hoy') {
     return (
-      <div className="my-2">
-        <span className="bg-red-100 text-red-700 px-3 py-1 rounded text-sm">
-          ❌ {estado === 'rechazado_bodega' ? 'Rechazado por bodega' : 'Rechazado por cartera'}
-        </span>
-      </div>
+      fecha.getDate() === ahora.getDate() &&
+      fecha.getMonth() === ahora.getMonth() &&
+      fecha.getFullYear() === ahora.getFullYear()
     )
   }
-
-  return (
-    <div className="flex items-center my-3">
-      {pasos.map((paso, i) => (
-        <div key={paso.key} className="flex items-center">
-          <div className="flex flex-col items-center">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${i <= pasoActual ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
-              {i <= pasoActual ? '✓' : i + 1}
-            </div>
-            <span className={`text-xs mt-1 ${i <= pasoActual ? 'text-green-600 font-medium' : 'text-gray-400'}`}>{paso.label}</span>
-          </div>
-          {i < pasos.length - 1 && <div className={`h-1 w-10 mx-1 mb-4 ${i < pasoActual ? 'bg-green-500' : 'bg-gray-200'}`} />}
-        </div>
-      ))}
-    </div>
-  )
+  if (rango === '7d') return ahora.getTime() - fecha.getTime() <= 7 * ms
+  if (rango === '30d') return ahora.getTime() - fecha.getTime() <= 30 * ms
+  if (rango === 'mes') {
+    return (
+      fecha.getMonth() === ahora.getMonth() &&
+      fecha.getFullYear() === ahora.getFullYear()
+    )
+  }
+  return true
 }
 
 export default function CarteraPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [loading, setLoading] = useState(true)
-  const [procesando, setProcesando] = useState<string | null>(null)
+  const [rolActual, setRolActual] = useState<string | null>(null)
+  const [pedidoAbierto, setPedidoAbierto] = useState<string | null>(null)
   const [verCotizacion, setVerCotizacion] = useState<string | null>(null)
+
+  const [filtros, setFiltros] = useState<FiltrosValores>(FILTROS_INICIALES)
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
+  const [mesesAbiertos, setMesesAbiertos] = useState<Record<string, boolean>>({})
+
   const { tiendaActual } = useTienda()
   const supabase = createClient()
 
   const fetchOrders = async () => {
     if (!tiendaActual) return
     setLoading(true)
+
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: perfil } = await supabase
+        .from('usuarios')
+        .select('rol')
+        .eq('id', user.id)
+        .single()
+      setRolActual(perfil?.rol || null)
+    }
+
     const { data } = await supabase
       .from('pedidos')
-      .select('*, usuarios(nombre, email), bodegas(nombre), detalle_pedido(id, cantidad_solicitada, productos(nombre, precio))')
+      .select(`
+        *,
+        usuarios(nombre, email),
+        bodegas(id, nombre),
+        clientes(nombre, cc_nit, telefono),
+        detalle_pedido(
+          id,
+          cantidad_solicitada,
+          cantidad_aprobada,
+          productos(id, nombre, precio, codigo)
+        )
+      `)
       .eq('bodega_id', tiendaActual.id)
       .order('fecha', { ascending: false })
+
     setPedidos(data || [])
     setLoading(false)
   }
 
-  useEffect(() => { fetchOrders() }, [tiendaActual])
-
-  const calcularTotales = (detalles: DetallePedido[]) => {
-    const subtotal = detalles.reduce((acc, d) => acc + (d.productos?.precio || 0) * d.cantidad_solicitada, 0)
-    const porcentaje = calcularDescuento(subtotal)
-    const descuento = subtotal * (porcentaje / 100)
-    const total = subtotal - descuento
-    return { subtotal, porcentaje, descuento, total }
-  }
-
-  const handleApprove = async (pedido: Pedido) => {
-    setProcesando(pedido.id)
-    try {
-      const { subtotal, porcentaje, descuento, total } = calcularTotales(pedido.detalle_pedido)
-      const numeroFactura = generarNumeroFactura()
-      const numeroCotizacion = await generarNumeroCotizacion(supabase)
-
-      // 1. Actualizar pedido
-      const { error: errUpdate } = await supabase.from('pedidos').update({
-        estado: 'aprobado_cartera',
-        subtotal,
-        descuento_porcentaje: porcentaje,
-        descuento_valor: descuento,
-        total,
-        numero_factura: numeroFactura,
-        numero_cotizacion: numeroCotizacion,
-        aprobado_cartera_en: new Date().toISOString(),
-      }).eq('id', pedido.id)
-
-      if (errUpdate) {
-        alert('Error actualizando pedido: ' + errUpdate.message)
-        return
-      }
-
-      // 2. Generar PDF y subir a Drive
-      const res = await fetch('/api/cotizacion/generar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pedidoId: pedido.id }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        console.error('Error subiendo a Drive:', data)
-        alert(
-          'Pedido aprobado, pero no se pudo subir el PDF a Drive: ' +
-          (data.error || 'Error desconocido')
-        )
-      } else {
-        alert(
-          `✅ Pedido aprobado\n\n` +
-          `Cotización: ${data.numeroCotizacion}\n` +
-          `Carpeta: ${data.subcarpeta}\n` +
-          `Archivo: ${data.nombreArchivo}\n\n` +
-          `El PDF se subió a tu Drive`
-        )
-      }
-
-      fetchOrders()
-    } finally {
-      setProcesando(null)
-    }
-  }
-
-  const handleReject = async (id: string) => {
-    setProcesando(id)
-    await supabase.from('pedidos').update({ estado: 'rechazado_cartera' }).eq('id', id)
-    setProcesando(null)
+  useEffect(() => {
     fetchOrders()
+  }, [tiendaActual])
+
+  // ─────────────────────────────────────────────────────
+  // Separación
+  // ─────────────────────────────────────────────────────
+  const porAprobar = useMemo(
+    () => pedidos.filter(p => p.estado === 'aprobado_bodega'),
+    [pedidos]
+  )
+
+  const vendedoresUnicos = useMemo(() => {
+    const set = new Set<string>()
+    pedidos.forEach(p => {
+      if (p.usuarios?.nombre) set.add(p.usuarios.nombre)
+    })
+    return Array.from(set).sort().map(v => ({ valor: v, etiqueta: v }))
+  }, [pedidos])
+
+  const historialFiltrado = useMemo(() => {
+    const q = filtros.busqueda.trim().toLowerCase()
+
+    return pedidos.filter(p => {
+      // Historial: todos los que NO están en aprobado_bodega
+      if (p.estado === 'aprobado_bodega') return false
+
+      // Filtro estado
+      if (filtros.estado === 'pendiente' && p.estado !== 'pendiente') return false
+      if (filtros.estado === 'aprobado' && !['aprobado_cartera'].includes(p.estado)) return false
+      if (filtros.estado === 'despachado' && p.estado !== 'despachado') return false
+      if (filtros.estado === 'entregado' && p.estado !== 'entregado') return false
+      if (filtros.estado === 'rechazado' && !['rechazado_bodega', 'rechazado_cartera'].includes(p.estado)) return false
+      if (filtros.estado === 'cancelado' && p.estado !== 'cancelado') return false
+
+      // Fecha
+      if (!estaEnRango(p.fecha, filtros.fecha)) return false
+
+      // Vendedor
+      if (filtros.extra !== 'todos' && p.usuarios?.nombre !== filtros.extra) return false
+
+      // Búsqueda
+      if (q) {
+        const partes = [
+          p.numero_cotizacion,
+          p.numero_factura,
+          p.id,
+          String(p.id).slice(0, 8),
+          p.usuarios?.nombre,
+          p.clientes?.nombre,
+          p.clientes?.cc_nit,
+          p.observacion,
+        ]
+          .filter(Boolean)
+          .map(s => String(s).toLowerCase())
+        if (!partes.some(s => s.includes(q))) return false
+      }
+
+      return true
+    })
+  }, [pedidos, filtros])
+
+  const historialPorMes = useMemo(() => {
+    const grupos: Record<string, Pedido[]> = {}
+    historialFiltrado.forEach(p => {
+      const key = getMesKey(p.fecha)
+      if (!grupos[key]) grupos[key] = []
+      grupos[key].push(p)
+    })
+    return Object.entries(grupos).sort(([a], [b]) => b.localeCompare(a))
+  }, [historialFiltrado])
+
+  useEffect(() => {
+    if (historialPorMes.length > 0) {
+      setMesesAbiertos(prev => {
+        const nuevo = { ...prev }
+        if (Object.keys(nuevo).length === 0) {
+          nuevo[historialPorMes[0][0]] = true
+        }
+        return nuevo
+      })
+    }
+  }, [historialPorMes.length])
+
+  const toggleMes = (key: string) => {
+    setMesesAbiertos(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const formatCOP = (value: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(value)
-
-  const estadoColor: Record<string, string> = {
-    pendiente: 'bg-yellow-100 text-yellow-700',
-    aprobado_bodega: 'bg-blue-100 text-blue-700',
-    rechazado_bodega: 'bg-red-100 text-red-700',
-    aprobado_cartera: 'bg-green-100 text-green-700',
-    rechazado_cartera: 'bg-red-100 text-red-700',
-    despachado: 'bg-purple-100 text-purple-700',
-    entregado: 'bg-gray-100 text-gray-700'
+  const quitarFiltro = (campo: keyof FiltrosValores) => {
+    setFiltros(prev => ({
+      ...prev,
+      [campo]: campo === 'busqueda' ? '' : 'todos',
+    }))
   }
 
-  const estadoLabel: Record<string, string> = {
-    pendiente: 'Pendiente bodega',
-    aprobado_bodega: 'Aprobado bodega',
-    rechazado_bodega: 'Rechazado bodega',
-    aprobado_cartera: 'Aprobado',
-    rechazado_cartera: 'Rechazado',
-    despachado: 'Despachado',
-    entregado: 'Entregado'
-  }
-
-  const porAprobar = pedidos.filter(p => p.estado === 'aprobado_bodega')
-  const historial = pedidos.filter(p => p.estado !== 'aprobado_bodega')
+  const pedidoActual = pedidos.find(p => p.id === pedidoAbierto) || null
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Cartera</h1>
-        <p className="text-gray-500 text-sm">{tiendaActual?.nombre}</p>
-      </div>
+    <div className="min-h-screen bg-[#F7F7FB]">
+      <header className="sticky top-0 z-20 bg-white border-b border-gray-100">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold text-[#232323]">Cartera</h1>
+            <p className="text-xs text-[#828282] truncate">{tiendaActual?.nombre}</p>
+          </div>
+          <button
+            onClick={() => setFiltrosAbiertos(true)}
+            className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-[#1A0087] text-white rounded-xl text-sm font-medium hover:bg-[#130066] active:scale-[0.98] transition-all shadow-sm"
+          >
+            <FunnelIcon className="w-4 h-4" />
+            Filtros
+          </button>
+        </div>
 
-      {loading ? <p>Cargando...</p> : (
-        <>
-          {porAprobar.length > 0 && (
-            <div className="mb-8">
-              <h2 className="text-lg font-semibold mb-3 text-blue-700">📋 Por aprobar ({porAprobar.length})</h2>
-              <div className="flex flex-col gap-4">
-                {porAprobar.map(p => {
-                  const { subtotal, porcentaje, descuento, total } = calcularTotales(p.detalle_pedido)
-                  return (
-                    <div key={p.id} className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-400">
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <p className="font-medium">Vendedor: {p.usuarios?.nombre}</p>
-                          <p className="text-sm text-gray-500">{p.usuarios?.email}</p>
-                          <p className="text-sm text-gray-500">{new Date(p.fecha).toLocaleDateString()}</p>
-                          {p.observacion && <p className="text-sm italic mt-1">{p.observacion}</p>}
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
-                          <CotizacionBadge estado={getEstadoCotizacion(p.estado)} size="sm" />
-                        </div>
-                      </div>
-
-                      <EstadoBarra estado={p.estado} />
-
-                      <div className="border-t pt-3 mb-3">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-gray-500">
-                              <th className="text-left pb-1">Producto</th>
-                              <th className="text-right pb-1">Precio</th>
-                              <th className="text-right pb-1">Cant.</th>
-                              <th className="text-right pb-1">Subtotal</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {p.detalle_pedido.map((d, i) => (
-                              <tr key={i} className="border-t">
-                                <td className="py-1">{d.productos?.nombre}</td>
-                                <td className="py-1 text-right">{formatCOP(d.productos?.precio || 0)}</td>
-                                <td className="py-1 text-right">{d.cantidad_solicitada}</td>
-                                <td className="py-1 text-right">{formatCOP((d.productos?.precio || 0) * d.cantidad_solicitada)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <div className="border-t pt-3 text-sm mb-4">
-                        <div className="flex justify-between text-gray-500">
-                          <span>Subtotal</span>
-                          <span>{formatCOP(subtotal)}</span>
-                        </div>
-                        {porcentaje > 0 && (
-                          <div className="flex justify-between text-green-600">
-                            <span>Descuento ({porcentaje}%)</span>
-                            <span>- {formatCOP(descuento)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between font-bold text-base mt-1">
-                          <span>Total</span>
-                          <span>{formatCOP(total)}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <button onClick={() => setVerCotizacion(p.id)} className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] px-4 py-2 rounded hover:bg-[#1A0087]/20 font-medium text-sm">
-                          <DocumentTextIcon className="w-4 h-4" />
-                          Ver cotización
-                        </button>
-                        <button onClick={() => handleApprove(p)} disabled={procesando === p.id} className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 disabled:opacity-50 text-sm">
-                          {procesando === p.id ? 'Procesando...' : '✅ Aprobar y generar cotización'}
-                        </button>
-                        <button onClick={() => handleReject(p.id)} disabled={procesando === p.id} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 disabled:opacity-50 text-sm">
-                          ❌ Rechazar
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          <div>
-            <h2 className="text-lg font-semibold mb-3 text-gray-600">Historial</h2>
-            <div className="flex flex-col gap-3">
-              {historial.map(p => (
-                <div key={p.id} className="bg-white rounded-lg shadow p-4">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium">{p.usuarios?.nombre}</p>
-                      <p className="text-sm text-gray-500">{new Date(p.fecha).toLocaleDateString()}</p>
-                      {p.numero_factura && <p className="text-sm text-blue-600 font-medium">{p.numero_factura}</p>}
-                      {p.numero_cotizacion && <p className="text-xs font-mono text-[#1A0087]">{p.numero_cotizacion}</p>}
-                      {p.detalle_pedido.map((d, i) => (
-                        <p key={i} className="text-sm text-gray-600">• {d.productos?.nombre} x{d.cantidad_solicitada}</p>
-                      ))}
-                      {p.total > 0 && (
-                        <div className="mt-1 text-sm">
-                          {p.descuento_porcentaje > 0 && <p className="text-green-600">Descuento {p.descuento_porcentaje}%: -{formatCOP(p.descuento_valor)}</p>}
-                          <p className="font-bold">Total: {formatCOP(p.total)}</p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>{estadoLabel[p.estado]}</span>
-                      <CotizacionBadge
-                        estado={getEstadoCotizacion(p.estado)}
-                        numeroCotizacion={p.numero_cotizacion}
-                        size="sm"
-                      />
-                    </div>
-                  </div>
-                  <EstadoBarra estado={p.estado} />
-                  <div className="flex gap-2 mt-2">
-                    <button onClick={() => setVerCotizacion(p.id)} className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] px-3 py-1.5 rounded text-xs hover:bg-[#1A0087]/20 font-medium">
-                      <DocumentTextIcon className="w-3.5 h-3.5" />
-                      Ver cotización
-                    </button>
-                  </div>
-                </div>
-              ))}
+        {(filtros.busqueda.trim() || filtros.fecha !== 'todo' || filtros.estado !== 'todos' || filtros.extra !== 'todos') && (
+          <div className="border-t border-gray-100 bg-white">
+            <div className="max-w-5xl mx-auto px-4 py-3">
+              <FiltrosChips
+                valores={filtros}
+                onQuitar={quitarFiltro}
+                onLimpiar={() => setFiltros(FILTROS_INICIALES)}
+                extraLabel="Vendedor"
+                extraOpciones={vendedoresUnicos}
+              />
             </div>
           </div>
-        </>
+        )}
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 py-6">
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <div className="w-10 h-10 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : (
+          <div className="space-y-8">
+
+            {/* POR APROBAR */}
+            <section>
+              <div className="flex items-center gap-2 mb-4">
+                <h2 className="text-base font-bold text-[#232323]">
+                  🔥 Por aprobar
+                </h2>
+                <span className="text-xs font-medium bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                  {porAprobar.length}
+                </span>
+              </div>
+
+              {porAprobar.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
+                  <ClipboardDocumentListIcon className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm text-[#828282]">No hay pedidos pendientes de aprobación</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {porAprobar.map(p => (
+                    <PedidoCardCompacta
+                      key={p.id}
+                      pedido={p}
+                      onClick={() => setPedidoAbierto(p.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* HISTORIAL */}
+            <section>
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-[#232323]">
+                    📚 Historial
+                  </h2>
+                  <span className="text-xs text-[#828282]">
+                    {historialFiltrado.length} {historialFiltrado.length === 1 ? 'pedido' : 'pedidos'}
+                  </span>
+                </div>
+              </div>
+
+              {historialFiltrado.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
+                  <p className="text-sm text-[#828282]">
+                    {filtros.busqueda.trim() ||
+                      filtros.fecha !== 'todo' ||
+                      filtros.estado !== 'todos' ||
+                      filtros.extra !== 'todos'
+                      ? 'No hay pedidos que coincidan con los filtros'
+                      : 'Aún no hay pedidos en el historial'}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {historialPorMes.map(([mesKey, itemsMes]) => {
+                    const abierto = mesesAbiertos[mesKey] ?? false
+                    return (
+                      <div
+                        key={mesKey}
+                        className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+                      >
+                        <button
+                          onClick={() => toggleMes(mesKey)}
+                          className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            {abierto ? (
+                              <ChevronDownIcon className="w-4 h-4 text-[#828282]" />
+                            ) : (
+                              <ChevronRightIcon className="w-4 h-4 text-[#828282]" />
+                            )}
+                            <span className="font-semibold text-sm text-[#232323]">
+                              📅 {getMesLabel(itemsMes[0].fecha)}
+                            </span>
+                            <span className="text-xs text-[#828282]">
+                              ({itemsMes.length})
+                            </span>
+                          </div>
+                        </button>
+
+                        {abierto && (
+                          <div className="p-3 pt-0 space-y-2">
+                            {itemsMes.map(p => (
+                              <PedidoCardCompacta
+                                key={p.id}
+                                pedido={p}
+                                onClick={() => setPedidoAbierto(p.id)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+      </main>
+
+      <FiltrosModal
+        abierto={filtrosAbiertos}
+        onClose={() => setFiltrosAbiertos(false)}
+        valores={filtros}
+        onAplicar={setFiltros}
+        extraLabel="Vendedor"
+        extraOpciones={vendedoresUnicos}
+        placeholderBusqueda="Buscar por COT, factura, pedido, cliente o vendedor..."
+      />
+
+      {pedidoActual && (
+        <PedidoDetalleModal
+          pedido={pedidoActual}
+          onClose={() => setPedidoAbierto(null)}
+          onRefresh={fetchOrders}
+          rolActual={rolActual}
+          onVerCotizacion={(id) => {
+            setPedidoAbierto(null)
+            setVerCotizacion(id)
+          }}
+        />
       )}
 
-      {/* Modal de cotización */}
       {verCotizacion && (
         <CotizacionPreview
           pedidoId={verCotizacion}

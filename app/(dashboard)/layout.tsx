@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { NotificacionesProvider } from '@/lib/context/NotificacionesContext'
+import { ProvidersWithKey } from '@/components/ProvidersWithKey'
 import DashboardContent from '@/components/dashboard/DashboardContent'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -57,10 +58,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <NotificacionesProvider rol={rol} userId={userId}>
-      <DashboardContent rol={rol}>
-        {children}
-      </DashboardContent>
-    </NotificacionesProvider>
+    <ProvidersWithKey>
+      <NotificacionesProvider rol={rol} userId={userId}>
+        <DashboardContent rol={rol}>
+          {children}
+        </DashboardContent>
+      </NotificacionesProvider>
+    </ProvidersWithKey>
   )
 }

@@ -1,110 +1,93 @@
 'use client'
 
 import { useState } from 'react'
-import { MagnifyingGlassIcon } from '@heroicons/react/24/outline'
-import { useBuscarCliente } from '@/lib/hooks/useBuscarCliente'
-import { ClienteCard } from './ClienteCard'
-import { ClienteNuevoForm } from './ClienteNuevoForm'
+import {
+    MagnifyingGlassIcon,
+    UserPlusIcon,
+    UserIcon,
+    XMarkIcon,
+} from '@heroicons/react/24/outline'
+import { ClienteBuscadorModal } from './ClienteBuscadorModal'
 import type { Cliente } from '@/types/clientes'
 
 interface Props {
+    clienteSeleccionado: Cliente | null
     onClienteSeleccionado: (cliente: Cliente) => void
+    onLimpiar: () => void
     onVerHistorial: (cliente: Cliente) => void
 }
 
-export function ClienteSelector({ onClienteSeleccionado, onVerHistorial }: Props) {
-    const [ccNit, setCcNit] = useState('')
-    const [modoRegistro, setModoRegistro] = useState(false)
-    const { cliente, estado, error } = useBuscarCliente(ccNit)
-    const [pedidosCount] = useState(0)
+export function ClienteSelector({
+    clienteSeleccionado,
+    onClienteSeleccionado,
+    onLimpiar,
+    onVerHistorial,
+}: Props) {
+    const [modalAbierto, setModalAbierto] = useState(false)
 
-    const handleContinuar = () => {
-        if (cliente) onClienteSeleccionado(cliente)
-    }
-
-    const handleClienteCreado = (nuevo: Cliente) => {
-        setModoRegistro(false)
-        onClienteSeleccionado(nuevo)
-    }
-
-    const handleCCChange = (valor: string) => {
-        const soloNumeros = valor.replace(/\D/g, '')
-        setCcNit(soloNumeros)
-        setModoRegistro(false)
-    }
-
-    return (
-        <div>
-            <label className="block text-sm font-medium text-[#232323] mb-2">
-                CC / NIT <span className="text-red-500">*</span>
-            </label>
-            <div className="relative">
-                <input
-                    className="w-full border border-gray-200 px-3 py-3 pr-10 rounded-xl text-base min-h-[44px] focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 transition-colors"
-                    placeholder="Escribe la cédula o NIT"
-                    value={ccNit}
-                    onChange={(e) => handleCCChange(e.target.value)}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    onKeyDown={(e) => {
-                        const teclasPermitidas = ['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'Home', 'End']
-                        if (teclasPermitidas.includes(e.key)) return
-                        if (e.ctrlKey || e.metaKey) return
-                        if (!/^\d$/.test(e.key)) e.preventDefault()
-                    }}
-                    autoFocus
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    {estado === 'buscando' ? (
-                        <div className="w-4 h-4 border-2 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                        <MagnifyingGlassIcon className="w-4 h-4 text-gray-400" />
-                    )}
+    // Si ya hay cliente seleccionado → mostrar tarjeta compacta con opción de cambiar
+    if (clienteSeleccionado) {
+        return (
+            <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center gap-3">
+                <div className="w-11 h-11 shrink-0 rounded-full bg-green-500 flex items-center justify-center">
+                    <UserIcon className="w-5 h-5 text-white" />
                 </div>
-            </div>
-
-            {estado === 'escribiendo' && ccNit.length >= 3 && (
-                <p className="text-xs text-[#828282] mt-2">Escribiendo…</p>
-            )}
-            {estado === 'buscando' && (
-                <p className="text-xs text-[#828282] mt-2">Buscando…</p>
-            )}
-            {estado === 'error' && (
-                <p className="text-xs text-red-500 mt-2">{error || 'Error al buscar'}</p>
-            )}
-
-            {estado === 'encontrado' && cliente && !modoRegistro && (
-                <ClienteCard
-                    cliente={cliente}
-                    pedidosCount={pedidosCount}
-                    onVerHistorial={() => onVerHistorial(cliente)}
-                    onContinuar={handleContinuar}
-                />
-            )}
-
-            {estado === 'no_encontrado' && !modoRegistro && ccNit.trim().length >= 3 && (
-                <div className="border border-yellow-200 bg-yellow-50/50 rounded-2xl p-4 mt-3">
-                    <p className="text-sm font-semibold text-yellow-700">⚠️ Cliente no encontrado</p>
-                    <p className="text-xs text-[#828282] mt-1">
-                        No hay ningún cliente con la CC/NIT <span className="font-medium">{ccNit}</span>
+                <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[#232323] truncate">
+                        {clienteSeleccionado.nombre}
                     </p>
-                    <button
-                        type="button"
-                        onClick={() => setModoRegistro(true)}
-                        className="mt-3 w-full min-h-[44px] px-4 py-2.5 text-sm bg-[#1A0087] text-white rounded-xl hover:bg-[#130066] active:scale-[0.98] font-medium transition-all"
-                    >
-                        + Registrar nuevo cliente
-                    </button>
+                    <p className="text-xs text-[#828282] truncate">
+                        CC/NIT: {clienteSeleccionado.cc_nit}
+                    </p>
                 </div>
-            )}
+                <button
+                    type="button"
+                    onClick={onLimpiar}
+                    className="shrink-0 w-9 h-9 flex items-center justify-center rounded-full text-gray-400 hover:bg-white active:bg-gray-100 transition-colors"
+                    aria-label="Cambiar cliente"
+                >
+                    <XMarkIcon className="w-4 h-4" />
+                </button>
+            </div>
+        )
+    }
 
-            {modoRegistro && (
-                <ClienteNuevoForm
-                    ccNit={ccNit}
-                    onCreado={handleClienteCreado}
-                    onCancelar={() => setModoRegistro(false)}
-                />
-            )}
-        </div>
+    // Si no hay cliente → botón grande para abrir el modal
+    return (
+        <>
+            <button
+                type="button"
+                onClick={() => setModalAbierto(true)}
+                className="w-full text-left bg-white border border-gray-200 rounded-2xl p-4 hover:border-[#1A0087] hover:bg-[#1A0087]/5 active:scale-[0.99] transition-all group"
+            >
+                <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 shrink-0 rounded-full bg-[#1A0087]/10 flex items-center justify-center group-hover:bg-[#1A0087]/20 transition-colors">
+                        <MagnifyingGlassIcon className="w-5 h-5 text-[#1A0087]" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-[#232323]">
+                            Buscar cliente
+                        </p>
+                        <p className="text-xs text-[#828282] mt-0.5">
+                            Por CC/NIT · También puedes registrar uno nuevo
+                        </p>
+                    </div>
+                    <UserPlusIcon className="w-5 h-5 text-gray-400 shrink-0 group-hover:text-[#1A0087] transition-colors" />
+                </div>
+            </button>
+
+            <ClienteBuscadorModal
+                abierto={modalAbierto}
+                onClose={() => setModalAbierto(false)}
+                onSeleccionar={(c) => {
+                    onClienteSeleccionado(c)
+                    setModalAbierto(false)
+                }}
+                onVerHistorial={(c) => {
+                    setModalAbierto(false)
+                    onVerHistorial(c)
+                }}
+            />
+        </>
     )
 }
