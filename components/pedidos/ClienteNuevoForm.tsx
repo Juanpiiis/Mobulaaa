@@ -1,11 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Cliente } from '@/types/clientes'
 
 interface Props {
     ccNit: string
+    nombreInicial?: string
+    telefonoInicial?: string
     onCreado: (cliente: Cliente) => void
     onCancelar: () => void
 }
@@ -13,21 +15,94 @@ interface Props {
 const inputClass =
     'w-full border border-gray-200 px-3 py-2.5 rounded-xl text-base min-h-[44px] focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 transition-colors'
 
-export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
+export function ClienteNuevoForm({
+    ccNit,
+    nombreInicial = '',
+    telefonoInicial = '',
+    onCreado,
+    onCancelar,
+}: Props) {
     const supabase = createClient()
-    const [nombre, setNombre] = useState('')
-    const [telefono, setTelefono] = useState('')
-    const [email, setEmail] = useState('')
+    const [nombre, setNombre] = useState(nombreInicial)
+    const [telefono, setTelefono] = useState(telefonoInicial)
     const [direccion, setDireccion] = useState('')
     const [guardando, setGuardando] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
+    // Si cambian los valores iniciales, actualizamos
+    useEffect(() => {
+        setNombre(nombreInicial)
+    }, [nombreInicial])
+
+    useEffect(() => {
+        setTelefono(telefonoInicial)
+    }, [telefonoInicial])
+
+    // ─────────────────────────────────────────────────────
+    // Validaciones
+    // ─────────────────────────────────────────────────────
+    const validar = (): string | null => {
+        const ccLimpio = ccNit.trim()
+        const nombreLimpio = nombre.trim()
+        const telefonoLimpio = telefono.trim()
+
+        if (!ccLimpio) {
+            return 'El CC/NIT es obligatorio'
+        }
+
+        if (!/^\d+$/.test(ccLimpio)) {
+            return 'El CC/NIT debe contener solo números'
+        }
+
+        if (ccLimpio.length < 5) {
+            return 'El CC/NIT debe tener al menos 5 dígitos'
+        }
+
+        if (ccLimpio.length > 15) {
+            return 'El CC/NIT no puede tener más de 15 dígitos'
+        }
+
+        if (!nombreLimpio) {
+            return 'El nombre es obligatorio'
+        }
+
+        if (nombreLimpio.length < 3) {
+            return 'El nombre debe tener al menos 3 caracteres'
+        }
+
+        if (nombreLimpio.length > 100) {
+            return 'El nombre no puede tener más de 100 caracteres'
+        }
+
+        if (/^\d+$/.test(nombreLimpio)) {
+            return 'El nombre no puede ser solo números'
+        }
+
+        if (telefonoLimpio) {
+            const telNumeros = telefonoLimpio.replace(/\D/g, '')
+            if (telNumeros.length < 7) {
+                return 'El teléfono debe tener al menos 7 dígitos'
+            }
+            if (telNumeros.length > 15) {
+                return 'El teléfono no puede tener más de 15 dígitos'
+            }
+        }
+
+        if (direccion.trim().length > 200) {
+            return 'La dirección no puede tener más de 200 caracteres'
+        }
+
+        return null
+    }
+
     const handleCrear = async () => {
-        if (!nombre.trim()) {
-            setError('El nombre es obligatorio')
+        if (guardando) return
+
+        const errorValidacion = validar()
+        if (errorValidacion) {
+            setError(errorValidacion)
             return
         }
-        if (guardando) return
 
         setGuardando(true)
         setError(null)
@@ -39,7 +114,7 @@ export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
                     cc_nit: ccNit.trim(),
                     nombre: nombre.trim(),
                     telefono: telefono.trim() || null,
-                    email: email.trim() || null,
+                    email: null, // ← Ya no se pide
                     direccion: direccion.trim() || null,
                     activo: true,
                 })
@@ -62,6 +137,7 @@ export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
             }
 
             if (err) {
+                console.error('Error creando cliente:', err)
                 setError('No se pudo crear el cliente. Intenta de nuevo.')
                 return
             }
@@ -69,61 +145,68 @@ export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
             if (data) {
                 onCreado(data as Cliente)
             }
-        } catch {
+        } catch (e: any) {
+            console.error(e)
             setError('Error inesperado. Intenta de nuevo.')
         } finally {
             setGuardando(false)
         }
     }
 
+    const tieneCC = ccNit.trim().length > 0
+
     return (
         <div className="border border-yellow-200 bg-yellow-50/50 rounded-2xl p-4 mt-3">
             <div className="mb-3">
                 <p className="text-sm font-semibold text-yellow-700">⚠️ Cliente no encontrado</p>
-                <p className="text-xs text-[#828282] mt-1">Registra los datos para continuar</p>
+                <p className="text-xs text-[#828282] mt-1">
+                    {tieneCC ? 'Registra los datos para continuar' : 'Registra los datos del nuevo cliente'}
+                </p>
             </div>
 
             <div className="bg-white rounded-xl p-4 border border-gray-100 space-y-3">
                 <div>
-                    <label className="block text-xs text-[#828282] mb-1">CC / NIT</label>
+                    <label className="block text-xs text-[#828282] mb-1">
+                        CC / NIT <span className="text-red-500">*</span>
+                    </label>
                     <input
-                        className={`${inputClass} bg-gray-50`}
+                        className={`${inputClass} ${tieneCC ? 'bg-gray-50 text-gray-600' : ''}`}
                         value={ccNit}
                         disabled
+                        placeholder={tieneCC ? '' : 'Sin CC/NIT'}
                     />
                 </div>
                 <div>
-                    <label className="block text-xs text-[#828282] mb-1">Nombre *</label>
+                    <label className="block text-xs text-[#828282] mb-1">
+                        Nombre <span className="text-red-500">*</span>
+                    </label>
                     <input
                         className={inputClass}
                         placeholder="Nombre completo"
                         value={nombre}
-                        onChange={(e) => setNombre(e.target.value)}
-                        autoFocus
+                        onChange={(e) => {
+                            setNombre(e.target.value)
+                            setError(null)
+                        }}
+                        disabled={guardando}
+                        autoFocus={!nombreInicial}
+                        maxLength={100}
                     />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                        <label className="block text-xs text-[#828282] mb-1">Teléfono</label>
-                        <input
-                            className={inputClass}
-                            placeholder="300 123 4567"
-                            value={telefono}
-                            onChange={(e) => setTelefono(e.target.value)}
-                            inputMode="tel"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs text-[#828282] mb-1">Email</label>
-                        <input
-                            className={inputClass}
-                            placeholder="cliente@email.com"
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            inputMode="email"
-                        />
-                    </div>
+                <div>
+                    <label className="block text-xs text-[#828282] mb-1">Teléfono</label>
+                    <input
+                        className={inputClass}
+                        placeholder="300 123 4567"
+                        value={telefono}
+                        onChange={(e) => {
+                            setTelefono(e.target.value)
+                            setError(null)
+                        }}
+                        inputMode="tel"
+                        disabled={guardando}
+                        maxLength={20}
+                    />
                 </div>
                 <div>
                     <label className="block text-xs text-[#828282] mb-1">Dirección</label>
@@ -131,11 +214,20 @@ export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
                         className={inputClass}
                         placeholder="Dirección"
                         value={direccion}
-                        onChange={(e) => setDireccion(e.target.value)}
+                        onChange={(e) => {
+                            setDireccion(e.target.value)
+                            setError(null)
+                        }}
+                        disabled={guardando}
+                        maxLength={200}
                     />
                 </div>
 
-                {error && <p className="text-xs text-red-600">{error}</p>}
+                {error && (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                        <p className="text-xs text-red-700 font-medium">⚠️ {error}</p>
+                    </div>
+                )}
             </div>
 
             <div className="flex gap-2 mt-3">
@@ -150,8 +242,8 @@ export function ClienteNuevoForm({ ccNit, onCreado, onCancelar }: Props) {
                 <button
                     type="button"
                     onClick={handleCrear}
-                    disabled={guardando || !nombre.trim()}
-                    className="flex-1 min-h-[44px] px-4 py-2.5 text-sm bg-[#1A0087] text-white rounded-xl hover:bg-[#130066] active:scale-[0.98] disabled:opacity-50 font-medium transition-all"
+                    disabled={guardando || !nombre.trim() || !ccNit.trim()}
+                    className="flex-1 min-h-[44px] px-4 py-2.5 text-sm bg-[#1A0087] text-white rounded-xl hover:bg-[#130066] active:scale-[0.98] disabled:opacity-50 font-semibold transition-all"
                 >
                     {guardando ? 'Creando...' : 'Crear y continuar'}
                 </button>

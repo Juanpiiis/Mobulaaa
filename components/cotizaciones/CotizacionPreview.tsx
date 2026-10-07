@@ -88,15 +88,15 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
     }
 
     const handleDescargarPDF = async () => {
-        // Si ya está en Drive, abrir el link
+        // Si ya está subido a Drive, abrir el link directo
         if (pedido?.pdf_url) {
             window.open(pedido.pdf_url, '_blank')
             return
         }
 
-        // Si no, generar el PDF
+        // Si no, generar el PDF con el endpoint preview
         try {
-            const res = await fetch('/api/cotizacion/generar', {
+            const res = await fetch('/api/cotizacion/preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pedidoId }),
@@ -109,8 +109,8 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
                 return
             }
 
-            // Descargar el PDF desde base64
             if (data.pdfBase64) {
+                // Descargar el PDF
                 const byteCharacters = atob(data.pdfBase64)
                 const byteArray = new Uint8Array(byteCharacters.length)
                 for (let i = 0; i < byteCharacters.length; i++) {
@@ -125,14 +125,6 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
                 a.click()
                 a.remove()
                 window.URL.revokeObjectURL(url)
-            }
-
-            // Si Drive subió bien, avisar
-            if (data.url) {
-                // Recargar para mostrar el botón "Ver PDF en Drive"
-                setTimeout(() => window.location.reload(), 500)
-            } else if (data.driveError) {
-                console.warn('Drive falló:', data.driveError)
             }
         } catch (e: any) {
             alert('Error: ' + e.message)

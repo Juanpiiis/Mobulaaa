@@ -8,6 +8,7 @@ export type AccionHistorial =
     | 'rechazado_bodega'
     | 'aprobado_cartera'
     | 'rechazado_cartera'
+    | 'devuelto_por_cartera'
     | 'despachado'
     | 'entregado'
     | 'revertido'
@@ -223,11 +224,10 @@ export async function revertirCambio({
 }
 
 /**
- * Cancela un pedido activo (pendiente, aprobado_bodega, aprobado_cartera).
+ * Cancela un pedido activo.
  * - Solo ADMIN
  * - NO mueve stock
  * - Cambia estado a 'cancelado'
- * - Registra evento en historial con motivo
  */
 export async function cancelarPedido({
     pedidoId,
@@ -318,6 +318,7 @@ export const ACCION_LABELS: Record<AccionHistorial, string> = {
     rechazado_bodega: 'Rechazado por bodega',
     aprobado_cartera: 'Aprobado por cartera',
     rechazado_cartera: 'Rechazado por cartera',
+    devuelto_por_cartera: 'Devuelto por cartera',
     despachado: 'Despachado',
     entregado: 'Entregado',
     revertido: 'Revertido',
@@ -332,6 +333,7 @@ export const ACCION_COLORES: Record<AccionHistorial, string> = {
     rechazado_bodega: 'bg-red-100 text-red-700 border-red-200',
     aprobado_cartera: 'bg-green-100 text-green-700 border-green-200',
     rechazado_cartera: 'bg-red-100 text-red-700 border-red-200',
+    devuelto_por_cartera: 'bg-amber-100 text-amber-700 border-amber-200',
     despachado: 'bg-purple-100 text-purple-700 border-purple-200',
     entregado: 'bg-gray-100 text-gray-700 border-gray-200',
     revertido: 'bg-orange-100 text-orange-700 border-orange-200',

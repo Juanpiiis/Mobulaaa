@@ -126,8 +126,8 @@ export function ProductoBuscadorModal({
                                     type="button"
                                     onClick={() => setCategoriaActiva(null)}
                                     className={`shrink-0 px-4 py-2.5 rounded-full text-sm font-semibold transition-all min-h-[40px] flex items-center ${categoriaActiva === null
-                                            ? 'bg-[#1A0087] text-white shadow-sm'
-                                            : 'bg-gray-100 text-[#232323] hover:bg-gray-200 active:bg-gray-300'
+                                        ? 'bg-[#1A0087] text-white shadow-sm'
+                                        : 'bg-gray-100 text-[#232323] hover:bg-gray-200 active:bg-gray-300'
                                         }`}
                                 >
                                     Todas
@@ -138,8 +138,8 @@ export function ProductoBuscadorModal({
                                         type="button"
                                         onClick={() => setCategoriaActiva(cat)}
                                         className={`shrink-0 px-4 py-2.5 rounded-full text-sm font-semibold transition-all min-h-[40px] flex items-center ${categoriaActiva === cat
-                                                ? 'bg-[#1A0087] text-white shadow-sm'
-                                                : 'bg-gray-100 text-[#232323] hover:bg-gray-200 active:bg-gray-300'
+                                            ? 'bg-[#1A0087] text-white shadow-sm'
+                                            : 'bg-gray-100 text-[#232323] hover:bg-gray-200 active:bg-gray-300'
                                             }`}
                                     >
                                         {cat}
@@ -186,8 +186,8 @@ export function ProductoBuscadorModal({
                                             onClose()
                                         }}
                                         className={`w-full text-left p-4 transition-colors ${congelado
-                                                ? 'bg-gray-50 cursor-not-allowed opacity-60'
-                                                : 'hover:bg-[#1A0087]/5 active:bg-[#1A0087]/10'
+                                            ? 'bg-gray-50 cursor-not-allowed opacity-60'
+                                            : 'hover:bg-[#1A0087]/5 active:bg-[#1A0087]/10'
                                             }`}
                                     >
                                         <div className="flex items-start gap-3">

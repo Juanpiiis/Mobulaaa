@@ -12,6 +12,7 @@ import {
     ArrowPathIcon,
     ClockIcon,
     ExclamationTriangleIcon,
+    ArrowUturnLeftIcon,
 } from '@heroicons/react/24/outline'
 import {
     ACCION_LABELS,
@@ -50,6 +51,7 @@ const ACCION_ICONS: Record<string, any> = {
     rechazado_bodega: XCircleIcon,
     aprobado_cartera: CheckCircleIcon,
     rechazado_cartera: XCircleIcon,
+    devuelto_por_cartera: ArrowUturnLeftIcon,
     despachado: TruckIcon,
     entregado: ArchiveBoxIcon,
     revertido: ArrowPathIcon,
