@@ -7,9 +7,12 @@ import {
     LockClosedIcon,
     PlusIcon,
 } from '@heroicons/react/24/outline'
-import { useBuscarProducto, type ProductoBusqueda } from '@/lib/hooks/useBuscarProducto'
-
-const STOCK_CONGELADO = 150
+import {
+    useBuscarProducto,
+    esProductoCongelado,
+    motivoCongelado,
+    type ProductoBusqueda,
+} from '@/lib/hooks/useBuscarProducto'
 
 interface Props {
     abierto: boolean
@@ -35,7 +38,6 @@ export function ProductoBuscadorModal({
 
     const { resultados, buscando } = useBuscarProducto(termino, bodegaId, productosBase)
 
-    // Reset al abrir
     useEffect(() => {
         if (abierto) {
             setTermino('')
@@ -43,7 +45,6 @@ export function ProductoBuscadorModal({
         }
     }, [abierto])
 
-    // Lista de categorías únicas (solo de los productos que existen)
     const categorias = useMemo(() => {
         const set = new Set<string>()
         productosBase.forEach(p => {
@@ -54,8 +55,6 @@ export function ProductoBuscadorModal({
 
     if (!abierto) return null
 
-    const esCongelado = (p: ProductoBusqueda) => p.stock_disponible <= STOCK_CONGELADO
-
     // 1. Filtrar por categoría + excluir los que ya están en el pedido
     let filtrados = resultados.filter(p => !productosExcluidos.includes(p.id))
     if (categoriaActiva) {
@@ -64,12 +63,12 @@ export function ProductoBuscadorModal({
 
     // 2. Ordenar: disponibles primero, luego congelados
     const ordenados = [...filtrados].sort((a, b) => {
-        const aCong = esCongelado(a) ? 1 : 0
-        const bCong = esCongelado(b) ? 1 : 0
+        const aCong = esProductoCongelado(a) ? 1 : 0
+        const bCong = esProductoCongelado(b) ? 1 : 0
         return aCong - bCong
     })
 
-    const totalDisponibles = ordenados.filter(p => !esCongelado(p)).length
+    const totalDisponibles = ordenados.filter(p => !esProductoCongelado(p)).length
 
     return (
         <div className="fixed inset-0 z-[90] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -117,7 +116,7 @@ export function ProductoBuscadorModal({
                     </div>
                 </div>
 
-                {/* CHIPS DE CATEGORÍAS (scroll horizontal) */}
+                {/* CHIPS DE CATEGORÍAS */}
                 {categorias.length > 0 && (
                     <div className="shrink-0 border-b border-gray-100 bg-white">
                         <div className="overflow-x-auto scrollbar-hide">
@@ -175,7 +174,7 @@ export function ProductoBuscadorModal({
                     ) : (
                         <div className="divide-y divide-gray-100">
                             {ordenados.map(p => {
-                                const congelado = esCongelado(p)
+                                const congelado = esProductoCongelado(p)
                                 return (
                                     <button
                                         key={p.id}
@@ -211,7 +210,7 @@ export function ProductoBuscadorModal({
                                                     {congelado ? (
                                                         <span className="text-red-600 font-medium flex items-center gap-1">
                                                             <LockClosedIcon className="w-3 h-3" />
-                                                            Congelado (stock {p.stock_disponible} ≤ {STOCK_CONGELADO})
+                                                            {motivoCongelado(p)}
                                                         </span>
                                                     ) : (
                                                         <span className="text-[#828282]">

@@ -6,9 +6,11 @@ import {
     PlusIcon,
     MinusIcon,
 } from '@heroicons/react/24/outline'
-import type { ProductoBusqueda } from '@/lib/hooks/useBuscarProducto'
-
-const STOCK_CONGELADO = 150
+import {
+    esProductoCongelado,
+    motivoCongelado,
+    type ProductoBusqueda,
+} from '@/lib/hooks/useBuscarProducto'
 
 interface Props {
     index: number
@@ -28,7 +30,7 @@ export function ProductoSelector({
     formatCOP,
 }: Props) {
     const cantNum = parseInt(cantidad || '0') || 0
-    const congelado = producto.stock_disponible <= STOCK_CONGELADO
+    const congelado = esProductoCongelado(producto)
     const subtotal = producto.precio * cantNum
 
     const setCantidad = (n: number) => {
@@ -79,7 +81,7 @@ export function ProductoSelector({
                     <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
                         <LockClosedIcon className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                         <p className="text-xs text-red-700 font-medium leading-snug">
-                            Producto congelado (stock ≤ {STOCK_CONGELADO}). No se puede pedir.
+                            {motivoCongelado(producto)}. No se puede pedir.
                         </p>
                     </div>
                 )}

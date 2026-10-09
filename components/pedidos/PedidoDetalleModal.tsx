@@ -209,7 +209,6 @@ export function PedidoDetalleModal({
     const esRechazado = ['rechazado_bodega', 'rechazado_cartera'].includes(pedido.estado)
     const esCancelable = ['pendiente', 'aprobado_bodega', 'aprobado_cartera', 'devuelto_por_cartera'].includes(pedido.estado)
 
-    // Puede editar SOLO si está pendiente (admin o bodeguero) o devuelto_por_cartera (solo admin)
     const puedeEditar =
         (pedido.estado === 'pendiente' && esBodeguero) ||
         (esDevuelto && esAdmin)
@@ -235,7 +234,7 @@ export function PedidoDetalleModal({
         }
     }, [pedido.id, abrirEnModoEdicion])
 
-    // Cargar productos de la bodega
+    // Cargar productos de la bodega (CON CAMPOS NUEVOS)
     useEffect(() => {
         const cargar = async () => {
             if (!bodegaId) return
@@ -246,7 +245,10 @@ export function PedidoDetalleModal({
                 .from('inventario')
                 .select(`
                     cantidad_disponible,
-                    productos!inner(id, nombre, precio, categoria, sku)
+                    productos!inner(
+                        id, nombre, precio, categoria, sku,
+                        congelado_manual, limite_congelado
+                    )
                 `)
                 .eq('bodega_id', bodegaId)
                 .gt('cantidad_disponible', 0)
@@ -259,6 +261,8 @@ export function PedidoDetalleModal({
                     categoria: i.productos?.categoria,
                     sku: i.productos?.sku,
                     stock_disponible: i.cantidad_disponible || 0,
+                    congelado_manual: i.productos?.congelado_manual ?? false,
+                    limite_congelado: i.productos?.limite_congelado ?? null,
                 }))
                 .filter((p: any) => p.id)
 

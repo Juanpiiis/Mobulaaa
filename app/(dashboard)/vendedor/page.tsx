@@ -6,26 +6,56 @@ import { calcularDescuento, DESCUENTOS } from '@/types/index'
 import { ClienteSelector } from '@/components/pedidos/ClienteSelector'
 import { HistorialClienteModal } from '@/components/pedidos/HistorialClienteModal'
 import { ProductoSelector } from '@/components/pedidos/ProductoSelector'
+import { ProductoBuscadorModal } from '@/components/pedidos/ProductoBuscadorModal'
+import { PedidoDetalleModal, type PedidoCompleto } from '@/components/pedidos/PedidoDetalleModal'
+import { PedidoCardCompacta } from '@/components/pedidos/PedidoCardCompacta'
+import { CotizacionPreview } from '@/components/cotizaciones/CotizacionPreview'
+import {
+  FiltrosModal,
+  FiltrosChips,
+  FILTROS_INICIALES,
+  type FiltrosValores,
+} from '@/components/pedidos/FiltrosModal'
 import type { Cliente } from '@/types/clientes'
-import type { ProductoBusqueda } from '@/lib/hooks/useBuscarProducto'
-
-const STOCK_CONGELADO = 150
+import {
+  esProductoCongelado,
+  motivoCongelado,
+  type ProductoBusqueda,
+} from '@/lib/hooks/useBuscarProducto'
+import {
+  XMarkIcon,
+  ShoppingBagIcon,
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  PlusIcon,
+  FunnelIcon,
+  ClipboardDocumentListIcon,
+} from '@heroicons/react/24/outline'
 
 interface Pedido {
   id: string
   estado: string
   fecha: string
-  observacion: string
+  observacion: string | null
   subtotal: number
   descuento_porcentaje: number
   descuento_valor: number
   total: number
-  numero_factura: string
-  bodegas: { nombre: string }
+  numero_factura: string | null
+  numero_cotizacion: string | null
+  revertido: boolean
+  importante?: boolean
+  bodegas: { id: string; nombre: string } | null
+  clientes: { nombre: string; cc_nit: string } | null
+  usuarios: { nombre: string } | null
   detalle_pedido: {
+    id?: string
+    producto_id?: string
     cantidad_solicitada: number
     cantidad_aprobada: number | null
-    productos: { nombre: string; precio: number }
+    productos: { id?: string; nombre: string; precio: number; codigo: string | null }
   }[]
 }
 
@@ -34,55 +64,43 @@ interface ItemPedido {
   cantidad: string
 }
 
-const EstadoBarra = ({ estado }: { estado: string }) => {
-  const pasos = [
-    { key: 'pendiente', label: 'Enviado' },
-    { key: 'aprobado_bodega', label: 'Bodega' },
-    { key: 'aprobado_cartera', label: 'Cartera' },
-    { key: 'despachado', label: 'Despachado' },
-    { key: 'entregado', label: 'Entregado' },
-  ]
+const MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+]
 
-  if (estado === 'rechazado_bodega' || estado === 'rechazado_cartera') {
+function getMesKey(fechaISO: string) {
+  const d = new Date(fechaISO)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function getMesLabel(fechaISO: string) {
+  const d = new Date(fechaISO)
+  return `${MESES[d.getMonth()]} ${d.getFullYear()}`
+}
+
+function estaEnRango(fechaISO: string, rango: 'hoy' | '7d' | '30d' | 'mes' | 'todo') {
+  if (rango === 'todo') return true
+  const fecha = new Date(fechaISO)
+  const ahora = new Date()
+  const ms = 1000 * 60 * 60 * 24
+
+  if (rango === 'hoy') {
     return (
-      <div className="my-2">
-        <span className="bg-red-100 text-red-700 px-3 py-1 rounded text-sm">
-          ❌ {estado === 'rechazado_bodega' ? 'Rechazado por bodega' : 'Rechazado por cartera'}
-        </span>
-      </div>
+      fecha.getDate() === ahora.getDate() &&
+      fecha.getMonth() === ahora.getMonth() &&
+      fecha.getFullYear() === ahora.getFullYear()
     )
   }
-
-  const pasoActual = pasos.findIndex((p) => p.key === estado)
-
-  return (
-    <div className="flex items-center my-3">
-      {pasos.map((paso, i) => (
-        <div key={paso.key} className="flex items-center">
-          <div className="flex flex-col items-center">
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${i <= pasoActual ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-400'
-                }`}
-            >
-              {i <= pasoActual ? '✓' : i + 1}
-            </div>
-            <span
-              className={`text-xs mt-1 ${i <= pasoActual ? 'text-green-600 font-medium' : 'text-gray-400'
-                }`}
-            >
-              {paso.label}
-            </span>
-          </div>
-          {i < pasos.length - 1 && (
-            <div
-              className={`h-1 w-12 mx-1 mb-4 ${i < pasoActual ? 'bg-green-500' : 'bg-gray-200'
-                }`}
-            />
-          )}
-        </div>
-      ))}
-    </div>
-  )
+  if (rango === '7d') return ahora.getTime() - fecha.getTime() <= 7 * ms
+  if (rango === '30d') return ahora.getTime() - fecha.getTime() <= 30 * ms
+  if (rango === 'mes') {
+    return (
+      fecha.getMonth() === ahora.getMonth() &&
+      fecha.getFullYear() === ahora.getFullYear()
+    )
+  }
+  return true
 }
 
 export default function MisPedidosPage() {
@@ -95,8 +113,17 @@ export default function MisPedidosPage() {
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null)
   const [mostrarHistorial, setMostrarHistorial] = useState(false)
   const [paso, setPaso] = useState<'cliente' | 'productos'>('cliente')
-  const [items, setItems] = useState<ItemPedido[]>([{ producto_id: '', cantidad: '1' }])
+  const [items, setItems] = useState<ItemPedido[]>([])
   const [errorStock, setErrorStock] = useState<string | null>(null)
+  const [productoBuscadorAbierto, setProductoBuscadorAbierto] = useState(false)
+  const [pedidoAbierto, setPedidoAbierto] = useState<string | null>(null)
+  const [verCotizacion, setVerCotizacion] = useState<string | null>(null)
+  const [mesesAbiertos, setMesesAbiertos] = useState<Record<string, boolean>>({})
+
+  // Filtros
+  const [filtros, setFiltros] = useState<FiltrosValores>(FILTROS_INICIALES)
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
+
   const { tiendaActual } = useTienda()
   const supabase = createClient()
 
@@ -107,24 +134,45 @@ export default function MisPedidosPage() {
       minimumFractionDigits: 0,
     }).format(value)
 
+  // ─────────────────────────────────────────────
+  // Cargar pedidos + productos
+  // ─────────────────────────────────────────────
   const fetchOrders = async () => {
     if (!tiendaActual) return
+    setIsLoading(true)
+
     const { data: { user } } = await supabase.auth.getUser()
+
     const { data: p } = await supabase
       .from('pedidos')
-      .select(
-        '*, bodegas(nombre), detalle_pedido(cantidad_solicitada, cantidad_aprobada, productos(nombre, precio))'
-      )
+      .select(`
+        id, estado, fecha, observacion, subtotal, descuento_porcentaje, descuento_valor, total,
+        numero_factura, numero_cotizacion, revertido, importante,
+        bodegas ( id, nombre ),
+        clientes ( nombre, cc_nit ),
+        usuarios ( nombre ),
+        detalle_pedido (
+          id, producto_id, cantidad_solicitada, cantidad_aprobada,
+          productos ( id, nombre, precio, codigo )
+        )
+      `)
       .eq('vendedor_id', user?.id)
       .eq('bodega_id', tiendaActual.id)
       .order('fecha', { ascending: false })
+
     const { data: prod } = await supabase
       .from('inventario')
-      .select('cantidad_disponible, productos(id, nombre, precio, categoria, sku)')
+      .select(`
+        cantidad_disponible,
+        productos!inner(
+          id, nombre, precio, categoria, sku,
+          congelado_manual, limite_congelado
+        )
+      `)
       .eq('bodega_id', tiendaActual.id)
       .gt('cantidad_disponible', 0)
 
-    setPedidos(p || [])
+    setPedidos((p as unknown as Pedido[]) || [])
     setProductos(
       prod
         ?.map((i: any) => ({
@@ -134,6 +182,8 @@ export default function MisPedidosPage() {
           categoria: i.productos?.categoria,
           sku: i.productos?.sku,
           stock_disponible: i.cantidad_disponible || 0,
+          congelado_manual: i.productos?.congelado_manual ?? false,
+          limite_congelado: i.productos?.limite_congelado ?? null,
         }))
         .filter((p: any) => p.id) || []
     )
@@ -142,8 +192,12 @@ export default function MisPedidosPage() {
 
   useEffect(() => {
     fetchOrders()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tiendaActual])
 
+  // ─────────────────────────────────────────────
+  // Preview del pedido
+  // ─────────────────────────────────────────────
   const preview = useMemo(() => {
     const subtotal = items.reduce((acc, item) => {
       const prod = productos.find((p) => p.id === item.producto_id)
@@ -158,11 +212,14 @@ export default function MisPedidosPage() {
     return { subtotal, porcentaje, descuento, total, faltaPara, siguienteDescuento }
   }, [items, productos])
 
+  // ─────────────────────────────────────────────
+  // Congelados
+  // ─────────────────────────────────────────────
   const hayProductoCongelado = useMemo(() => {
     return items.some((it) => {
       if (!it.producto_id) return false
       const p = productos.find((pp) => pp.id === it.producto_id)
-      return p ? p.stock_disponible >= STOCK_CONGELADO : false
+      return p ? esProductoCongelado(p) : false
     })
   }, [items, productos])
 
@@ -171,14 +228,11 @@ export default function MisPedidosPage() {
       if (!item.producto_id) continue
       const cant = parseInt(item.cantidad || '0')
       if (cant <= 0) continue
-
       const prod = productos.find((pp) => pp.id === item.producto_id)
       if (!prod) continue
-
-      if (prod.stock_disponible >= STOCK_CONGELADO) {
-        return `"${prod.nombre}" está congelado en inventario (stock ≥ ${STOCK_CONGELADO}). Quítalo del pedido para continuar.`
+      if (esProductoCongelado(prod)) {
+        return `"${prod.nombre}" ${motivoCongelado(prod)}. Quítalo del pedido para continuar.`
       }
-
       if (cant > prod.stock_disponible) {
         return `"${prod.nombre}" solo tiene ${prod.stock_disponible} unidades disponibles`
       }
@@ -186,10 +240,11 @@ export default function MisPedidosPage() {
     return null
   }
 
+  // ─────────────────────────────────────────────
+  // Guardar pedido
+  // ─────────────────────────────────────────────
   const handleSave = async () => {
-    if (!tiendaActual) return
-    if (!clienteSeleccionado) return
-
+    if (!tiendaActual || !clienteSeleccionado) return
     const err = validarStock()
     if (err) {
       setErrorStock(err)
@@ -200,13 +255,11 @@ export default function MisPedidosPage() {
     const itemsValidos = items.filter(
       (i) => i.producto_id && i.cantidad && parseInt(i.cantidad) > 0
     )
-    if (itemsValidos.length === 0) return
-    if (isSaving) return
+    if (itemsValidos.length === 0 || isSaving) return
     setIsSaving(true)
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
-
       const { data: pedido, error: errPedido } = await supabase
         .from('pedidos')
         .insert({
@@ -225,17 +278,24 @@ export default function MisPedidosPage() {
         .single()
 
       if (errPedido || !pedido) {
-        console.error(errPedido)
+        console.error('ERROR AL CREAR PEDIDO:', errPedido)
+        setErrorStock(`Error al crear el pedido: ${errPedido?.message || 'desconocido'}`)
         return
       }
 
-      await supabase.from('detalle_pedido').insert(
+      const { error: errDetalle } = await supabase.from('detalle_pedido').insert(
         itemsValidos.map((item) => ({
           pedido_id: pedido.id,
           producto_id: item.producto_id,
           cantidad_solicitada: parseInt(item.cantidad),
         }))
       )
+
+      if (errDetalle) {
+        console.error('ERROR AL CREAR DETALLE:', errDetalle)
+        setErrorStock(`Pedido creado pero falló el detalle: ${errDetalle.message}`)
+        return
+      }
 
       resetModal()
       fetchOrders()
@@ -246,15 +306,16 @@ export default function MisPedidosPage() {
 
   const resetModal = () => {
     setIsModalOpen(false)
-    setItems([{ producto_id: '', cantidad: '1' }])
+    setItems([])
     setObservacion('')
     setClienteSeleccionado(null)
     setPaso('cliente')
     setErrorStock(null)
+    setProductoBuscadorAbierto(false)
   }
 
-  const handleSelectProducto = (index: number, p: ProductoBusqueda) => {
-    setItems(items.map((it, idx) => (idx === index ? { ...it, producto_id: p.id } : it)))
+  const handleAgregarProducto = (p: ProductoBusqueda) => {
+    setItems([...items, { producto_id: p.id, cantidad: '1' }])
     setErrorStock(null)
   }
 
@@ -263,265 +324,536 @@ export default function MisPedidosPage() {
     setErrorStock(null)
   }
 
-  const estadoLabel: Record<string, string> = {
-    pendiente: 'En revisión bodega',
-    aprobado_bodega: 'Aprobado bodega ✅',
-    rechazado_bodega: 'Rechazado bodega ❌',
-    aprobado_cartera: 'Aprobado cartera ✅',
-    rechazado_cartera: 'Rechazado cartera ❌',
-    despachado: 'Despachado 📦',
-    entregado: 'Entregado 🎉',
+  const handleEliminarItem = (index: number) => {
+    setItems(items.filter((_, idx) => idx !== index))
   }
 
-  const estadoColor: Record<string, string> = {
-    pendiente: 'bg-yellow-100 text-yellow-700',
-    aprobado_bodega: 'bg-blue-100 text-blue-700',
-    rechazado_bodega: 'bg-red-100 text-red-700',
-    aprobado_cartera: 'bg-green-100 text-green-700',
-    rechazado_cartera: 'bg-red-100 text-red-700',
-    despachado: 'bg-purple-100 text-purple-700',
-    entregado: 'bg-gray-100 text-gray-700',
+  // ─────────────────────────────────────────────
+  // Separación: En proceso vs Historial
+  // ─────────────────────────────────────────────
+  const enProceso = useMemo(() => {
+    const arr = pedidos.filter(p =>
+      ['pendiente', 'aprobado_bodega', 'aprobado_cartera', 'devuelto_por_cartera'].includes(p.estado)
+    )
+    return [...arr].sort((a, b) => {
+      if (a.importante && !b.importante) return -1
+      if (!a.importante && b.importante) return 1
+      return new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
+    })
+  }, [pedidos])
+
+  const historialFiltrado = useMemo(() => {
+    const q = filtros.busqueda.trim().toLowerCase()
+
+    return pedidos.filter(p => {
+      if (!['despachado', 'entregado', 'rechazado_bodega', 'rechazado_cartera', 'cancelado'].includes(p.estado)) {
+        return false
+      }
+
+      if (filtros.estado === 'pendiente' && p.estado !== 'pendiente') return false
+      if (filtros.estado === 'aprobado' && !['aprobado_bodega', 'aprobado_cartera'].includes(p.estado)) return false
+      if (filtros.estado === 'despachado' && p.estado !== 'despachado') return false
+      if (filtros.estado === 'entregado' && p.estado !== 'entregado') return false
+      if (filtros.estado === 'rechazado' && !['rechazado_bodega', 'rechazado_cartera'].includes(p.estado)) return false
+      if (filtros.estado === 'cancelado' && p.estado !== 'cancelado') return false
+
+      if (!estaEnRango(p.fecha, filtros.fecha)) return false
+
+      if (q) {
+        const partes = [
+          p.numero_cotizacion,
+          p.numero_factura,
+          p.id,
+          String(p.id).slice(0, 8),
+          p.clientes?.nombre,
+          p.clientes?.cc_nit,
+          p.observacion,
+        ].filter(Boolean).map(s => String(s).toLowerCase())
+        if (!partes.some(s => s.includes(q))) return false
+      }
+
+      return true
+    })
+  }, [pedidos, filtros])
+
+  const historialPorMes = useMemo(() => {
+    const grupos: Record<string, Pedido[]> = {}
+    historialFiltrado.forEach(p => {
+      const key = getMesKey(p.fecha)
+      if (!grupos[key]) grupos[key] = []
+      grupos[key].push(p)
+    })
+    return Object.entries(grupos).sort(([a], [b]) => b.localeCompare(a))
+  }, [historialFiltrado])
+
+  useEffect(() => {
+    if (historialPorMes.length > 0) {
+      setMesesAbiertos(prev => {
+        const nuevo = { ...prev }
+        if (Object.keys(nuevo).length === 0) {
+          nuevo[historialPorMes[0][0]] = true
+        }
+        return nuevo
+      })
+    }
+  }, [historialPorMes.length])
+
+  const toggleMes = (key: string) => {
+    setMesesAbiertos(prev => ({ ...prev, [key]: !prev[key] }))
   }
+
+  const quitarFiltro = (campo: keyof FiltrosValores) => {
+    setFiltros(prev => ({
+      ...prev,
+      [campo]: campo === 'busqueda' ? '' : 'todos',
+    }))
+  }
+
+  const pedidoActual = pedidos.find(p => p.id === pedidoAbierto) || null
+  const productosExcluidos = items.map(i => i.producto_id).filter(Boolean)
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Mis Pedidos</h1>
-          <p className="text-gray-500 text-sm">{tiendaActual?.nombre}</p>
+    <div className="min-h-screen bg-[#F7F7FB] w-full">
+      {/* HEADER */}
+      <header className="sticky top-[calc(var(--main-padding)*-1)] -mx-[var(--main-padding)] -mt-[var(--main-padding)] z-20 bg-white border-b border-gray-100">
+        <div className="w-full px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-[#232323]">Mis Pedidos</h1>
+            <p className="text-sm text-[#828282] truncate mt-0.5">{tiendaActual?.nombre}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setFiltrosAbiertos(true)}
+              className="flex items-center gap-2 px-3 py-2.5 border border-gray-200 text-[#232323] rounded-xl text-sm font-medium hover:bg-gray-50 active:scale-[0.98] transition-all min-h-[44px]"
+            >
+              <FunnelIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Filtros</span>
+            </button>
+            <button
+              onClick={() => {
+                setItems([])
+                setIsModalOpen(true)
+              }}
+              className="bg-[#1A0087] text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-[#130066] active:scale-[0.98] transition-transform shadow-sm min-h-[44px]"
+            >
+              + Nuevo
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-[#1A0087] text-white px-4 py-2 rounded hover:bg-[#130066]"
-        >
-          + Nuevo Pedido
-        </button>
-      </div>
 
-      {isLoading ? (
-        <p>Cargando...</p>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {pedidos.length === 0 && <p className="text-gray-500">No tienes pedidos aún.</p>}
-          {pedidos.map((p) => (
-            <div key={p.id} className="bg-white rounded-lg shadow p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="font-medium">{p.bodegas?.nombre}</p>
-                  <p className="text-sm text-gray-500">
-                    {new Date(p.fecha).toLocaleDateString()}
-                  </p>
-                  {p.numero_factura && (
-                    <p className="text-sm text-blue-600 font-medium">{p.numero_factura}</p>
-                  )}
-                  {p.observacion && <p className="text-sm italic mt-1">{p.observacion}</p>}
-                </div>
-                <span className={`px-3 py-1 rounded text-sm ${estadoColor[p.estado]}`}>
-                  {estadoLabel[p.estado]}
-                </span>
-              </div>
-              <EstadoBarra estado={p.estado} />
-              <div className="border-t pt-3">
-                {p.detalle_pedido?.map((d, i) => (
-                  <div key={i} className="flex justify-between text-sm">
-                    <span>
-                      • {d.productos?.nombre} x{d.cantidad_solicitada}
-                    </span>
-                    <span className="text-gray-500">
-                      {formatCOP((d.productos?.precio || 0) * d.cantidad_solicitada)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              {p.total > 0 && (
-                <div className="border-t pt-2 mt-2 text-sm">
-                  <div className="flex justify-between text-gray-500">
-                    <span>Subtotal</span>
-                    <span>{formatCOP(p.subtotal)}</span>
-                  </div>
-                  {p.descuento_porcentaje > 0 && (
-                    <div className="flex justify-between text-green-600">
-                      <span>Descuento ({p.descuento_porcentaje}%)</span>
-                      <span>- {formatCOP(p.descuento_valor)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-bold">
-                    <span>Total</span>
-                    <span>{formatCOP(p.total)}</span>
-                  </div>
-                </div>
-              )}
+        {(filtros.busqueda.trim() || filtros.fecha !== 'todo' || filtros.estado !== 'todos') && (
+          <div className="border-t border-gray-100 bg-white">
+            <div className="w-full px-4 sm:px-6 py-3">
+              <FiltrosChips
+                valores={filtros}
+                onQuitar={quitarFiltro}
+                onLimpiar={() => setFiltros(FILTROS_INICIALES)}
+              />
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        )}
+      </header>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg w-full max-w-2xl max-h-screen overflow-y-auto">
-            <div className="p-6">
-              <h2 className="text-xl font-bold mb-4">
-                Nuevo Pedido — {tiendaActual?.nombre}
-              </h2>
-
-              {paso === 'cliente' && (
-                <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                  <p className="font-medium text-sm mb-1 text-[#232323]">
-                    Paso 1 · Identifica al cliente
-                  </p>
-                  <p className="text-xs text-gray-500 mb-4">
-                    Busca por CC/NIT o registra un cliente nuevo
-                  </p>
-                  <ClienteSelector
-                    onClienteSeleccionado={(c) => {
-                      setClienteSeleccionado(c)
-                      setPaso('productos')
-                    }}
-                    onVerHistorial={(c) => {
-                      setClienteSeleccionado(c)
-                      setMostrarHistorial(true)
-                    }}
-                  />
+      {/* LISTA */}
+      <main className="w-full px-4 sm:px-6 py-6">
+        {isLoading ? (
+          <div className="flex justify-center py-20">
+            <div className="w-12 h-12 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : pedidos.length === 0 ? (
+          <div className="bg-white rounded-2xl p-10 text-center border border-gray-100">
+            <ShoppingBagIcon className="w-14 h-14 text-gray-200 mx-auto mb-3" />
+            <p className="text-sm text-[#828282]">Aún no tienes pedidos</p>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="mt-4 text-sm font-medium text-[#1A0087] hover:underline"
+            >
+              Crear el primero
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {enProceso.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <h2 className="text-lg font-bold text-[#232323]">🔥 En proceso</h2>
+                  <span className="text-sm font-semibold bg-yellow-100 text-yellow-800 px-3 py-0.5 rounded-full">
+                    {enProceso.length}
+                  </span>
                 </div>
-              )}
-
-              {paso === 'productos' && clienteSeleccionado && (
-                <>
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 flex justify-between items-center">
-                    <div>
-                      <p className="text-sm font-medium text-[#232323]">
-                        ✓ {clienteSeleccionado.nombre}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        CC/NIT: {clienteSeleccionado.cc_nit}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPaso('cliente')
-                        setClienteSeleccionado(null)
-                      }}
-                      className="text-xs text-[#1A0087] font-medium hover:underline"
-                    >
-                      Cambiar
-                    </button>
-                  </div>
-
-                  <p className="font-medium text-sm mb-3">Productos:</p>
-                  {items.map((item, i) => (
-                    <ProductoSelector
-                      key={i}
-                      index={i}
-                      item={item}
-                      productosBase={productos}
-                      bodegaId={tiendaActual?.id}
-                      onSelectProducto={handleSelectProducto}
-                      onCantidadChange={handleCantidadChange}
-                      onEliminar={(idx) => setItems(items.filter((_, k) => k !== idx))}
-                      mostrarEliminar={items.length > 1}
-                      formatCOP={formatCOP}
+                <div className="space-y-4">
+                  {enProceso.map(p => (
+                    <PedidoCardCompacta
+                      key={p.id}
+                      pedido={p as any}
+                      onClick={() => setPedidoAbierto(p.id)}
                     />
                   ))}
+                </div>
+                <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
+                  <p className="text-xs text-[#828282] italic">
+                    Para cancelar un pedido en proceso, contacta con bodega
+                  </p>
+                </div>
+              </section>
+            )}
 
+            {historialFiltrado.length > 0 && (
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <h2 className="text-lg font-bold text-[#232323]">📚 Historial</h2>
+                  <span className="text-sm text-[#828282]">
+                    {historialFiltrado.length} {historialFiltrado.length === 1 ? 'pedido' : 'pedidos'}
+                  </span>
+                </div>
+                <div className="space-y-4">
+                  {historialPorMes.map(([mesKey, itemsMes]) => {
+                    const abierto = mesesAbiertos[mesKey] ?? false
+                    return (
+                      <div
+                        key={mesKey}
+                        className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
+                      >
+                        <button
+                          onClick={() => toggleMes(mesKey)}
+                          className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3">
+                            {abierto ? (
+                              <ChevronDownIcon className="w-5 h-5 text-[#828282]" />
+                            ) : (
+                              <ChevronRightIcon className="w-5 h-5 text-[#828282]" />
+                            )}
+                            <span className="font-semibold text-base text-[#232323]">
+                              📅 {getMesLabel(itemsMes[0].fecha)}
+                            </span>
+                            <span className="text-sm text-[#828282]">
+                              ({itemsMes.length})
+                            </span>
+                          </div>
+                        </button>
+
+                        {abierto && (
+                          <div className="p-4 pt-0 space-y-3">
+                            {itemsMes.map(p => (
+                              <PedidoCardCompacta
+                                key={p.id}
+                                pedido={p as any}
+                                onClick={() => setPedidoAbierto(p.id)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
+
+            {historialFiltrado.length === 0 && (filtros.busqueda.trim() || filtros.fecha !== 'todo' || filtros.estado !== 'todos') && (
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <h2 className="text-lg font-bold text-[#232323]">📚 Historial</h2>
+                </div>
+                <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                  <ClipboardDocumentListIcon className="w-14 h-14 text-gray-300 mx-auto mb-3" />
+                  <p className="text-sm text-[#828282]">
+                    No hay pedidos que coincidan con los filtros
+                  </p>
                   <button
-                    onClick={() =>
-                      setItems([...items, { producto_id: '', cantidad: '1' }])
-                    }
-                    className="text-[#1A0087] text-sm mb-4 hover:underline"
+                    onClick={() => setFiltros(FILTROS_INICIALES)}
+                    className="mt-3 text-xs text-[#1A0087] font-medium hover:underline"
                   >
-                    + Agregar producto
+                    Limpiar filtros
                   </button>
+                </div>
+              </section>
+            )}
+          </div>
+        )}
+      </main>
 
-                  <div className="mb-4">
-                    <label className="block text-xs text-gray-500 mb-1">
-                      Observación (opcional)
-                    </label>
-                    <input
-                      className="w-full border p-2 rounded text-sm"
-                      placeholder="Ej: Entrega urgente"
-                      value={observacion}
-                      onChange={(e) => setObservacion(e.target.value)}
-                    />
-                  </div>
+      {/* MODAL FILTROS */}
+      <FiltrosModal
+        abierto={filtrosAbiertos}
+        onClose={() => setFiltrosAbiertos(false)}
+        valores={filtros}
+        onAplicar={setFiltros}
+        placeholderBusqueda="Buscar por COT, factura, cliente..."
+      />
 
-                  {errorStock && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                      <p className="text-sm text-red-700 font-medium">⚠️ {errorStock}</p>
-                    </div>
-                  )}
-
-                  {hayProductoCongelado && !errorStock && (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-                      <p className="text-sm text-red-700 font-medium">
-                        🔒 Hay productos congelados en el pedido. Quítalos para poder enviar.
-                      </p>
-                    </div>
-                  )}
-
-                  {preview.subtotal > 0 && (
-                    <div className="bg-gray-50 rounded-lg p-4 mb-4 border">
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-500">Subtotal</span>
-                        <span className="font-medium">{formatCOP(preview.subtotal)}</span>
-                      </div>
-                      {preview.porcentaje > 0 ? (
-                        <div className="flex justify-between text-sm mb-1 text-green-600">
-                          <span>Descuento ({preview.porcentaje}%) ✅</span>
-                          <span>- {formatCOP(preview.descuento)}</span>
-                        </div>
-                      ) : preview.faltaPara > 0 ? (
-                        <div className="text-xs text-yellow-600 mb-1 bg-yellow-50 p-2 rounded">
-                          ⚡ Agrega {formatCOP(preview.faltaPara)} más para obtener{' '}
-                          {preview.siguienteDescuento?.porcentaje}% de descuento
-                        </div>
-                      ) : null}
-                      <div className="flex justify-between font-bold border-t pt-2 mt-1">
-                        <span>Total</span>
-                        <span>{formatCOP(preview.total)}</span>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              <div className="flex gap-2 justify-end">
+      {/* MODAL NUEVO PEDIDO */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-end sm:items-center sm:justify-center">
+          <div className="w-full sm:max-w-lg bg-white sm:rounded-3xl rounded-t-3xl max-h-[92vh] sm:max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="shrink-0 bg-white border-b border-gray-100">
+              <div className="flex items-center gap-3 px-4 py-3">
+                {paso === 'productos' ? (
+                  <button
+                    onClick={() => setPaso('cliente')}
+                    disabled={isSaving}
+                    className="w-9 h-9 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors disabled:opacity-50"
+                    aria-label="Atrás"
+                  >
+                    <ChevronLeftIcon className="w-5 h-5 text-[#232323]" />
+                  </button>
+                ) : (
+                  <div className="w-9 h-9 shrink-0" />
+                )}
+                <div className="flex-1 min-w-0 text-center">
+                  <h2 className="text-base font-semibold text-[#232323] truncate">
+                    Nuevo Pedido
+                  </h2>
+                  <p className="text-[11px] text-[#828282] truncate">
+                    {tiendaActual?.nombre}
+                  </p>
+                </div>
                 <button
                   onClick={resetModal}
                   disabled={isSaving}
-                  className="bg-gray-300 px-4 py-2 rounded disabled:opacity-50"
+                  className="w-9 h-9 shrink-0 flex items-center justify-center rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors disabled:opacity-50"
+                  aria-label="Cerrar"
                 >
-                  Cancelar
+                  <XMarkIcon className="w-5 h-5 text-[#232323]" />
                 </button>
-                {paso === 'productos' && (
-                  <button
-                    onClick={handleSave}
-                    disabled={
-                      isSaving ||
-                      preview.subtotal === 0 ||
-                      !clienteSeleccionado ||
-                      hayProductoCongelado
-                    }
-                    className="bg-[#1A0087] text-white px-4 py-2 rounded disabled:opacity-50 hover:bg-[#130066]"
-                    title={hayProductoCongelado ? 'Quita los productos congelados para continuar' : ''}
-                  >
-                    {isSaving
-                      ? 'Enviando...'
-                      : hayProductoCongelado
-                        ? '🔒 Quita los congelados'
-                        : 'Enviar pedido'}
-                  </button>
+              </div>
+
+              <div className="px-4 pb-3">
+                <div className="flex items-center gap-2 text-xs">
+                  <div className={`flex items-center gap-1.5 font-medium ${paso === 'cliente' ? 'text-[#1A0087]' : 'text-green-600'}`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'cliente' ? 'bg-[#1A0087] text-white' : 'bg-green-500 text-white'}`}>
+                      {paso === 'cliente' ? '1' : <CheckIcon className="w-3 h-3" />}
+                    </div>
+                    Cliente
+                  </div>
+                  <div className={`flex-1 h-0.5 rounded transition-colors ${paso === 'productos' ? 'bg-[#1A0087]' : 'bg-gray-200'}`} />
+                  <div className={`flex items-center gap-1.5 font-medium ${paso === 'productos' ? 'text-[#1A0087]' : 'text-[#828282]'}`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'productos' ? 'bg-[#1A0087] text-white' : 'bg-gray-200 text-[#828282]'}`}>
+                      2
+                    </div>
+                    Productos
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto overscroll-contain">
+              <div className="p-4 space-y-4">
+                {paso === 'cliente' && (
+                  <>
+                    <div>
+                      <h3 className="text-base font-semibold text-[#232323]">
+                        Identifica al cliente
+                      </h3>
+                      <p className="text-xs text-[#828282] mt-1">
+                        Busca por CC/NIT o nombre, o registra uno nuevo
+                      </p>
+                    </div>
+                    <ClienteSelector
+                      clienteSeleccionado={clienteSeleccionado}
+                      onClienteSeleccionado={(c) => {
+                        setClienteSeleccionado(c)
+                        setPaso('productos')
+                      }}
+                      onLimpiar={() => setClienteSeleccionado(null)}
+                      onVerHistorial={(c) => {
+                        setClienteSeleccionado(c)
+                        setMostrarHistorial(true)
+                      }}
+                    />
+                  </>
+                )}
+
+                {paso === 'productos' && clienteSeleccionado && (
+                  <>
+                    <ClienteSelector
+                      clienteSeleccionado={clienteSeleccionado}
+                      onClienteSeleccionado={() => { }}
+                      onLimpiar={() => {
+                        setClienteSeleccionado(null)
+                        setPaso('cliente')
+                      }}
+                      onVerHistorial={() => setMostrarHistorial(true)}
+                    />
+
+                    <div>
+                      <div className="mb-3 flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-[#232323]">
+                            Productos
+                          </h3>
+                          <p className="text-xs text-[#828282] mt-0.5">
+                            {items.length} {items.length === 1 ? 'producto' : 'productos'} en el pedido
+                          </p>
+                        </div>
+                      </div>
+
+                      {items.length > 0 && (
+                        <div className="space-y-3 mb-3">
+                          {items.map((item, i) => {
+                            const prod = productos.find(p => p.id === item.producto_id)
+                            if (!prod) return null
+                            return (
+                              <ProductoSelector
+                                key={`${item.producto_id}-${i}`}
+                                index={i}
+                                producto={prod}
+                                cantidad={item.cantidad}
+                                onCantidadChange={handleCantidadChange}
+                                onEliminar={handleEliminarItem}
+                                formatCOP={formatCOP}
+                              />
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => setProductoBuscadorAbierto(true)}
+                        className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-[#1A0087]/30 rounded-2xl text-sm font-medium text-[#1A0087] hover:bg-[#1A0087]/5 active:bg-[#1A0087]/10 transition-colors"
+                      >
+                        <PlusIcon className="w-4 h-4" />
+                        Agregar producto
+                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-[#828282] mb-1.5">
+                        Observación (opcional)
+                      </label>
+                      <textarea
+                        className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 resize-none"
+                        rows={2}
+                        placeholder="Ej: Entrega urgente..."
+                        value={observacion}
+                        onChange={(e) => setObservacion(e.target.value)}
+                      />
+                    </div>
+
+                    {errorStock && (
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                        <p className="text-sm text-red-700 font-medium">⚠️ {errorStock}</p>
+                      </div>
+                    )}
+                    {hayProductoCongelado && !errorStock && (
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                        <p className="text-sm text-red-700 font-medium">
+                          🔒 Quita los productos congelados para continuar
+                        </p>
+                      </div>
+                    )}
+
+                    {preview.subtotal > 0 && (
+                      <div className="bg-[#1A0087]/5 border border-[#1A0087]/20 rounded-2xl p-4 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-[#828282]">Subtotal</span>
+                          <span className="font-medium text-[#232323]">
+                            {formatCOP(preview.subtotal)}
+                          </span>
+                        </div>
+                        {preview.porcentaje > 0 ? (
+                          <div className="flex justify-between text-sm text-green-600">
+                            <span className="font-medium">
+                              Descuento ({preview.porcentaje}%)
+                            </span>
+                            <span className="font-medium">
+                              - {formatCOP(preview.descuento)}
+                            </span>
+                          </div>
+                        ) : preview.faltaPara > 0 ? (
+                          <p className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 p-2 rounded-lg">
+                            ⚡ Agrega {formatCOP(preview.faltaPara)} más para{' '}
+                            {preview.siguienteDescuento?.porcentaje}% de descuento
+                          </p>
+                        ) : null}
+                        <div className="flex justify-between items-baseline pt-2 border-t border-[#1A0087]/20">
+                          <span className="font-semibold text-[#232323]">Total</span>
+                          <span className="text-xl font-bold text-[#1A0087]">
+                            {formatCOP(preview.total)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
+            </div>
+
+            <div className="shrink-0 border-t border-gray-100 bg-white p-4 flex gap-2">
+              <button
+                onClick={resetModal}
+                disabled={isSaving}
+                className="flex-1 sm:flex-initial sm:px-5 py-3 rounded-xl border border-gray-200 text-sm font-medium text-[#232323] hover:bg-gray-50 active:bg-gray-100 disabled:opacity-50 transition-colors"
+              >
+                Cancelar
+              </button>
+
+              {paso === 'productos' && (() => {
+                const sinProductos = items.length === 0
+                const disabled =
+                  isSaving || hayProductoCongelado || sinProductos || !clienteSeleccionado
+                const label = isSaving
+                  ? 'Enviando...'
+                  : hayProductoCongelado
+                    ? 'Quita los congelados'
+                    : sinProductos
+                      ? 'Agrega un producto'
+                      : 'Enviar pedido'
+
+                return (
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={disabled}
+                    className={`flex-1 px-5 py-3 rounded-xl text-sm font-semibold text-white transition-all shadow-sm ${disabled
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-[#1A0087] hover:bg-[#130066] active:scale-[0.98]'
+                      }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })()}
             </div>
           </div>
         </div>
       )}
 
+      <ProductoBuscadorModal
+        abierto={productoBuscadorAbierto}
+        onClose={() => setProductoBuscadorAbierto(false)}
+        onSeleccionar={handleAgregarProducto}
+        productosBase={productos}
+        bodegaId={tiendaActual?.id}
+        formatCOP={formatCOP}
+        productosExcluidos={productosExcluidos}
+      />
+
       {mostrarHistorial && clienteSeleccionado && (
         <HistorialClienteModal
           cliente={clienteSeleccionado}
           onClose={() => setMostrarHistorial(false)}
+        />
+      )}
+
+      {pedidoActual && (
+        <PedidoDetalleModal
+          pedido={pedidoActual as unknown as PedidoCompleto}
+          onClose={() => setPedidoAbierto(null)}
+          onRefresh={fetchOrders}
+          rolActual="vendedor"
+          onVerCotizacion={(id) => {
+            setPedidoAbierto(null)
+            setVerCotizacion(id)
+          }}
+        />
+      )}
+
+      {verCotizacion && (
+        <CotizacionPreview
+          pedidoId={verCotizacion}
+          onClose={() => setVerCotizacion(null)}
         />
       )}
     </div>

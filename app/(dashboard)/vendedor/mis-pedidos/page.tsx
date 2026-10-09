@@ -17,7 +17,7 @@ import {
   type FiltrosValores,
 } from '@/components/pedidos/FiltrosModal'
 import type { Cliente } from '@/types/clientes'
-import type { ProductoBusqueda } from '@/lib/hooks/useBuscarProducto'
+import { esProductoCongelado, motivoCongelado, type ProductoBusqueda } from '@/lib/hooks/useBuscarProducto'
 import {
   XMarkIcon,
   ShoppingBagIcon,
@@ -29,8 +29,6 @@ import {
   FunnelIcon,
   ClipboardDocumentListIcon,
 } from '@heroicons/react/24/outline'
-
-const STOCK_CONGELADO = 150
 
 interface Pedido {
   id: string
@@ -132,14 +130,28 @@ export default function MisPedidosPage() {
       minimumFractionDigits: 0,
     }).format(value)
 
+  // ─────────────────────────────────────────────
+  // Cargar pedidos + productos
+  // ─────────────────────────────────────────────
   const fetchOrders = async () => {
     if (!tiendaActual) return
+    setIsLoading(true)
+
     const { data: { user } } = await supabase.auth.getUser()
+
     const { data: p } = await supabase
       .from('pedidos')
-      .select(
-        '*, bodegas(id, nombre), clientes(nombre, cc_nit), usuarios(nombre), detalle_pedido(id, producto_id, cantidad_solicitada, cantidad_aprobada, productos(id, nombre, precio, codigo))'
-      )
+      .select(`
+        id, estado, fecha, observacion, subtotal, descuento_porcentaje, descuento_valor, total,
+        numero_factura, numero_cotizacion, revertido, importante,
+        bodegas ( id, nombre ),
+        clientes ( nombre, cc_nit ),
+        usuarios ( nombre ),
+        detalle_pedido (
+          id, producto_id, cantidad_solicitada, cantidad_aprobada,
+          productos ( id, nombre, precio, codigo )
+        )
+      `)
       .eq('vendedor_id', user?.id)
       .eq('bodega_id', tiendaActual.id)
       .order('fecha', { ascending: false })
@@ -148,7 +160,10 @@ export default function MisPedidosPage() {
       .from('inventario')
       .select(`
         cantidad_disponible,
-        productos!inner(id, nombre, precio, categoria, sku)
+        productos!inner(
+          id, nombre, precio, categoria, sku,
+          congelado_manual, limite_congelado
+        )
       `)
       .eq('bodega_id', tiendaActual.id)
       .gt('cantidad_disponible', 0)
@@ -163,6 +178,8 @@ export default function MisPedidosPage() {
           categoria: i.productos?.categoria,
           sku: i.productos?.sku,
           stock_disponible: i.cantidad_disponible || 0,
+          congelado_manual: i.productos?.congelado_manual ?? false,
+          limite_congelado: i.productos?.limite_congelado ?? null,
         }))
         .filter((p: any) => p.id) || []
     )
@@ -171,8 +188,12 @@ export default function MisPedidosPage() {
 
   useEffect(() => {
     fetchOrders()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tiendaActual])
 
+  // ─────────────────────────────────────────────
+  // Preview del pedido
+  // ─────────────────────────────────────────────
   const preview = useMemo(() => {
     const subtotal = items.reduce((acc, item) => {
       const prod = productos.find((p) => p.id === item.producto_id)
@@ -187,11 +208,14 @@ export default function MisPedidosPage() {
     return { subtotal, porcentaje, descuento, total, faltaPara, siguienteDescuento }
   }, [items, productos])
 
+  // ─────────────────────────────────────────────
+  // Congelados
+  // ─────────────────────────────────────────────
   const hayProductoCongelado = useMemo(() => {
     return items.some((it) => {
       if (!it.producto_id) return false
       const p = productos.find((pp) => pp.id === it.producto_id)
-      return p ? p.stock_disponible <= STOCK_CONGELADO : false
+      return p ? esProductoCongelado(p) : false
     })
   }, [items, productos])
 
@@ -202,8 +226,8 @@ export default function MisPedidosPage() {
       if (cant <= 0) continue
       const prod = productos.find((pp) => pp.id === item.producto_id)
       if (!prod) continue
-      if (prod.stock_disponible <= STOCK_CONGELADO) {
-        return `"${prod.nombre}" está congelado (stock ${prod.stock_disponible} ≤ ${STOCK_CONGELADO}). Quítalo del pedido para continuar.`
+      if (esProductoCongelado(prod)) {
+        return `"${prod.nombre}" ${motivoCongelado(prod)}. Quítalo del pedido para continuar.`
       }
       if (cant > prod.stock_disponible) {
         return `"${prod.nombre}" solo tiene ${prod.stock_disponible} unidades disponibles`
@@ -212,6 +236,9 @@ export default function MisPedidosPage() {
     return null
   }
 
+  // ─────────────────────────────────────────────
+  // Guardar pedido
+  // ─────────────────────────────────────────────
   const handleSave = async () => {
     if (!tiendaActual || !clienteSeleccionado) return
     const err = validarStock()
@@ -297,30 +324,28 @@ export default function MisPedidosPage() {
     setItems(items.filter((_, idx) => idx !== index))
   }
 
-  // ─────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────
   // Separación: En proceso vs Historial
-  // ─────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────
   const enProceso = useMemo(() => {
     const arr = pedidos.filter(p =>
       ['pendiente', 'aprobado_bodega', 'aprobado_cartera', 'devuelto_por_cartera'].includes(p.estado)
     )
-    // Importantes primero, luego fecha ascendente (viejos primero, nuevos abajo)
     return [...arr].sort((a, b) => {
       if (a.importante && !b.importante) return -1
       if (!a.importante && b.importante) return 1
       return new Date(a.fecha).getTime() - new Date(b.fecha).getTime()
     })
   }, [pedidos])
+
   const historialFiltrado = useMemo(() => {
     const q = filtros.busqueda.trim().toLowerCase()
 
     return pedidos.filter(p => {
-      // Historial = despachado, entregado, rechazado, cancelado
       if (!['despachado', 'entregado', 'rechazado_bodega', 'rechazado_cartera', 'cancelado'].includes(p.estado)) {
         return false
       }
 
-      // Filtro estado
       if (filtros.estado === 'pendiente' && p.estado !== 'pendiente') return false
       if (filtros.estado === 'aprobado' && !['aprobado_bodega', 'aprobado_cartera'].includes(p.estado)) return false
       if (filtros.estado === 'despachado' && p.estado !== 'despachado') return false
@@ -328,10 +353,8 @@ export default function MisPedidosPage() {
       if (filtros.estado === 'rechazado' && !['rechazado_bodega', 'rechazado_cartera'].includes(p.estado)) return false
       if (filtros.estado === 'cancelado' && p.estado !== 'cancelado') return false
 
-      // Filtro fecha
       if (!estaEnRango(p.fecha, filtros.fecha)) return false
 
-      // Búsqueda por texto
       if (q) {
         const partes = [
           p.numero_cotizacion,
@@ -414,7 +437,6 @@ export default function MisPedidosPage() {
           </div>
         </div>
 
-        {/* Chips de filtros activos */}
         {(filtros.busqueda.trim() || filtros.fecha !== 'todo' || filtros.estado !== 'todos') && (
           <div className="border-t border-gray-100 bg-white">
             <div className="w-full px-4 sm:px-6 py-3">
@@ -447,7 +469,6 @@ export default function MisPedidosPage() {
           </div>
         ) : (
           <div className="space-y-8">
-            {/* EN PROCESO */}
             {enProceso.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-4">
@@ -473,7 +494,6 @@ export default function MisPedidosPage() {
               </section>
             )}
 
-            {/* HISTORIAL */}
             {historialFiltrado.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-4">
@@ -527,7 +547,6 @@ export default function MisPedidosPage() {
               </section>
             )}
 
-            {/* Sin resultados de historial (filtros aplicados) */}
             {historialFiltrado.length === 0 && (filtros.busqueda.trim() || filtros.fecha !== 'todo' || filtros.estado !== 'todos') && (
               <section>
                 <div className="flex items-center gap-2 mb-4">
@@ -564,7 +583,6 @@ export default function MisPedidosPage() {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-end sm:items-center sm:justify-center">
           <div className="w-full sm:max-w-lg bg-white sm:rounded-3xl rounded-t-3xl max-h-[92vh] sm:max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-            {/* Header sticky */}
             <div className="shrink-0 bg-white border-b border-gray-100">
               <div className="flex items-center gap-3 px-4 py-3">
                 {paso === 'productos' ? (
@@ -597,28 +615,17 @@ export default function MisPedidosPage() {
                 </button>
               </div>
 
-              {/* Barra de progreso */}
               <div className="px-4 pb-3">
                 <div className="flex items-center gap-2 text-xs">
-                  <div
-                    className={`flex items-center gap-1.5 font-medium ${paso === 'cliente' ? 'text-[#1A0087]' : 'text-green-600'}`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'cliente' ? 'bg-[#1A0087] text-white' : 'bg-green-500 text-white'}`}
-                    >
+                  <div className={`flex items-center gap-1.5 font-medium ${paso === 'cliente' ? 'text-[#1A0087]' : 'text-green-600'}`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'cliente' ? 'bg-[#1A0087] text-white' : 'bg-green-500 text-white'}`}>
                       {paso === 'cliente' ? '1' : <CheckIcon className="w-3 h-3" />}
                     </div>
                     Cliente
                   </div>
-                  <div
-                    className={`flex-1 h-0.5 rounded transition-colors ${paso === 'productos' ? 'bg-[#1A0087]' : 'bg-gray-200'}`}
-                  />
-                  <div
-                    className={`flex items-center gap-1.5 font-medium ${paso === 'productos' ? 'text-[#1A0087]' : 'text-[#828282]'}`}
-                  >
-                    <div
-                      className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'productos' ? 'bg-[#1A0087] text-white' : 'bg-gray-200 text-[#828282]'}`}
-                    >
+                  <div className={`flex-1 h-0.5 rounded transition-colors ${paso === 'productos' ? 'bg-[#1A0087]' : 'bg-gray-200'}`} />
+                  <div className={`flex items-center gap-1.5 font-medium ${paso === 'productos' ? 'text-[#1A0087]' : 'text-[#828282]'}`}>
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${paso === 'productos' ? 'bg-[#1A0087] text-white' : 'bg-gray-200 text-[#828282]'}`}>
                       2
                     </div>
                     Productos
@@ -627,7 +634,6 @@ export default function MisPedidosPage() {
               </div>
             </div>
 
-            {/* Contenido scrollable */}
             <div className="flex-1 overflow-y-auto overscroll-contain">
               <div className="p-4 space-y-4">
                 {paso === 'cliente' && (
@@ -770,7 +776,6 @@ export default function MisPedidosPage() {
               </div>
             </div>
 
-            {/* Footer sticky */}
             <div className="shrink-0 border-t border-gray-100 bg-white p-4 flex gap-2">
               <button
                 onClick={resetModal}
@@ -811,7 +816,6 @@ export default function MisPedidosPage() {
         </div>
       )}
 
-      {/* MODAL BUSCADOR DE PRODUCTO */}
       <ProductoBuscadorModal
         abierto={productoBuscadorAbierto}
         onClose={() => setProductoBuscadorAbierto(false)}
@@ -822,7 +826,6 @@ export default function MisPedidosPage() {
         productosExcluidos={productosExcluidos}
       />
 
-      {/* MODAL HISTORIAL CLIENTE */}
       {mostrarHistorial && clienteSeleccionado && (
         <HistorialClienteModal
           cliente={clienteSeleccionado}
@@ -830,7 +833,6 @@ export default function MisPedidosPage() {
         />
       )}
 
-      {/* MODAL DETALLE PEDIDO */}
       {pedidoActual && (
         <PedidoDetalleModal
           pedido={pedidoActual as unknown as PedidoCompleto}
@@ -844,7 +846,6 @@ export default function MisPedidosPage() {
         />
       )}
 
-      {/* MODAL COTIZACIÓN */}
       {verCotizacion && (
         <CotizacionPreview
           pedidoId={verCotizacion}
