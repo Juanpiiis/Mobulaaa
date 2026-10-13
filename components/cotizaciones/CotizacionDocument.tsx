@@ -12,12 +12,14 @@ import {
 // ─────────────────────────────────────────
 const styles = StyleSheet.create({
     page: {
-        padding: 40,
+        paddingTop: 40,
+        paddingBottom: 80,
+        paddingHorizontal: 40,
         fontSize: 9,
         fontFamily: 'Helvetica',
         color: '#232323',
     },
-    // Marca de agua (simulada con texto grande rotado)
+    // Marca de agua
     watermarkContainer: {
         position: 'absolute',
         top: 300,
@@ -33,7 +35,6 @@ const styles = StyleSheet.create({
         color: '#000000',
         textAlign: 'center',
     },
-    // Header
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -73,7 +74,6 @@ const styles = StyleSheet.create({
         color: '#828282',
         marginTop: 4,
     },
-    // Cliente
     sectionTitle: {
         fontSize: 8,
         fontFamily: 'Helvetica-Bold',
@@ -103,7 +103,6 @@ const styles = StyleSheet.create({
         fontFamily: 'Helvetica-Bold',
         color: '#828282',
     },
-    // Tabla
     table: {
         marginBottom: 16,
     },
@@ -134,7 +133,11 @@ const styles = StyleSheet.create({
     colCantidad: { width: '10%', textAlign: 'center' },
     colPrecio: { width: '17.5%', textAlign: 'right' },
     colTotal: { width: '17.5%', textAlign: 'right' },
-    // Totales
+    notaSubido: {
+        fontSize: 7,
+        color: '#B45309',
+        marginTop: 2,
+    },
     totalsContainer: {
         flexDirection: 'row',
         justifyContent: 'flex-end',
@@ -178,7 +181,6 @@ const styles = StyleSheet.create({
     descuentoRow: {
         color: '#10B981',
     },
-    // Observaciones
     obsBox: {
         backgroundColor: '#F7F7F9',
         padding: 10,
@@ -189,7 +191,6 @@ const styles = StyleSheet.create({
         fontSize: 9,
         color: '#232323',
     },
-    // Footer
     footer: {
         position: 'absolute',
         bottom: 40,
@@ -210,6 +211,13 @@ const styles = StyleSheet.create({
         fontFamily: 'Helvetica-Bold',
         color: '#1A0087',
         marginTop: 4,
+    },
+    pageNumber: {
+        position: 'absolute',
+        bottom: 20,
+        right: 40,
+        fontSize: 7,
+        color: '#828282',
     },
 })
 
@@ -234,6 +242,8 @@ export interface CotizacionData {
         cantidad: number
         precio: number
         total: number
+        subido?: boolean
+        precioBase?: number
     }[]
     subtotal: number
     descuentoPorcentaje: number
@@ -258,9 +268,11 @@ function formatCOP(v: number): string {
 // COMPONENTE PDF
 // ─────────────────────────────────────────
 export function CotizacionDocument({ data }: { data: CotizacionData }) {
+    const haySubidos = data.items.some(i => i.subido)
+
     return (
         <Document>
-            <Page size="A4" style={styles.page}>
+            <Page size="A4" style={styles.page} wrap>
                 {/* Marca de agua */}
                 {data.marcaAgua && (
                     <View style={styles.watermarkContainer} fixed>
@@ -268,8 +280,8 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                     </View>
                 )}
 
-                {/* Encabezado */}
-                <View style={styles.header}>
+                {/* Encabezado — fijo en cada página */}
+                <View style={styles.header} fixed>
                     <View>
                         <Text style={styles.brand}>MOBULAA</Text>
                         <Text style={styles.brandSub}>TECNOLOGÍA</Text>
@@ -281,7 +293,7 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                     </View>
                 </View>
 
-                {/* Datos del cliente */}
+                {/* Datos del cliente — solo primera página */}
                 <Text style={styles.sectionTitle}>DATOS DEL CLIENTE</Text>
                 <View style={styles.clienteBox}>
                     <Text style={styles.clienteNombre}>
@@ -315,7 +327,7 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
 
                 {/* Tabla de productos */}
                 <View style={styles.table}>
-                    <View style={styles.tableHeader}>
+                    <View style={styles.tableHeader} fixed>
                         <Text style={[styles.tableHeaderCell, styles.colCodigo]}>
                             CÓDIGO
                         </Text>
@@ -337,6 +349,7 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                         <View
                             key={i}
                             style={[styles.tableRow, i % 2 === 1 ? styles.tableRowAlt : {}]}
+                            wrap={false}
                         >
                             <Text style={[styles.colCodigo, { fontSize: 8, color: '#828282' }]}>
                                 {item.codigo || '—'}
@@ -347,9 +360,14 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                             <Text style={[styles.colCantidad, { fontSize: 9 }]}>
                                 {item.cantidad}
                             </Text>
-                            <Text style={[styles.colPrecio, { fontSize: 9, color: '#555' }]}>
-                                {formatCOP(item.precio)}
-                            </Text>
+                            <View style={styles.colPrecio}>
+                                <Text style={{ fontSize: 9, color: '#555', textAlign: 'right' }}>
+                                    {formatCOP(item.precio)}
+                                    {item.subido && (
+                                        <Text style={{ color: '#B45309', fontFamily: 'Helvetica-Bold' }}> *</Text>
+                                    )}
+                                </Text>
+                            </View>
                             <Text
                                 style={[
                                     styles.colTotal,
@@ -363,7 +381,7 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                 </View>
 
                 {/* Totales */}
-                <View style={styles.totalsContainer}>
+                <View style={styles.totalsContainer} wrap={false}>
                     <View style={styles.totalsBox}>
                         <View style={styles.totalsRow}>
                             <Text style={styles.totalsLabel}>Subtotal</Text>
@@ -388,17 +406,24 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                     </View>
                 </View>
 
+                {/* Nota sobre precios ajustados */}
+                {haySubidos && (
+                    <Text style={styles.notaSubido}>
+
+                    </Text>
+                )}
+
                 {/* Observaciones */}
                 {data.observacion && (
-                    <>
+                    <View wrap={false}>
                         <Text style={styles.sectionTitle}>OBSERVACIONES</Text>
                         <View style={styles.obsBox}>
                             <Text style={styles.obsText}>{data.observacion}</Text>
                         </View>
-                    </>
+                    </View>
                 )}
 
-                {/* Footer */}
+                {/* Footer fijo en cada página */}
                 <View style={styles.footer} fixed>
                     <Text style={styles.footerText}>Cotización válida por 15 días</Text>
                     <Text style={styles.footerText}>
@@ -408,6 +433,15 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                         MOBULAA - Tecnología de alta calidad
                     </Text>
                 </View>
+
+                {/* Número de página */}
+                <Text
+                    style={styles.pageNumber}
+                    render={({ pageNumber, totalPages }) =>
+                        totalPages > 1 ? `Página ${pageNumber} de ${totalPages}` : ''
+                    }
+                    fixed
+                />
             </Page>
         </Document>
     )

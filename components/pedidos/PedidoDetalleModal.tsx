@@ -22,6 +22,10 @@ import {
     TrashIcon,
     ExclamationTriangleIcon,
     ArrowDownTrayIcon,
+    ArrowRightIcon,
+    TruckIcon,
+    ArchiveBoxIcon,
+    XCircleIcon,
 } from '@heroicons/react/24/outline'
 
 // ─────────────────────────────────────────────────────
@@ -32,6 +36,8 @@ interface DetallePedido {
     cantidad_solicitada: number
     cantidad_aprobada: number | null
     producto_id: string
+    precio_unitario?: number | null
+    tipo_precio?: string | null
     productos: { id: string; nombre: string; precio: number; codigo?: string | null }
 }
 
@@ -72,6 +78,8 @@ interface ItemEdit {
     cantidad: number | ''
     nombre: string
     precio: number
+    precio_unitario: number
+    precioTexto: string
 }
 
 // ─────────────────────────────────────────────────────
@@ -90,21 +98,37 @@ const calcularDescuento = (subtotal: number) => {
     return 0
 }
 
-// ─────────────────────────────────────────────────────
-// Barra de progreso
-// ─────────────────────────────────────────────────────
 const PASOS = [
     { key: 'pendiente', label: 'Pedido' },
-    { key: 'aprobado_bodega', label: 'Bodega' },
     { key: 'aprobado_cartera', label: 'Cartera' },
+    { key: 'en_preparacion', label: 'Preparando' },
+    { key: 'listo_para_despacho', label: 'Listo' },
     { key: 'despachado', label: 'Enviado' },
     { key: 'entregado', label: 'Entregado' },
 ]
 
-function BarraProgreso({ estado }: { estado: string }) {
+function getPasoActual(estado: string): number {
+    return PASOS.findIndex(p => p.key === estado)
+}
+
+const ESTADOS_FINALES = ['despachado', 'entregado', 'rechazado_bodega', 'rechazado_cartera', 'cancelado', 'devuelto_por_cartera']
+
+// ─────────────────────────────────────────────────────
+// Barra de progreso
+// ─────────────────────────────────────────────────────
+function BarraProgreso({
+    estado,
+    esAdmin,
+    onRetroceder,
+}: {
+    estado: string
+    esAdmin: boolean
+    onRetroceder: (pasoKey: string, pasoLabel: string) => void
+}) {
     const cancelado = ['rechazado_bodega', 'rechazado_cartera', 'cancelado'].includes(estado)
     const devuelto = estado === 'devuelto_por_cartera'
-    const pasoActual = PASOS.findIndex(p => p.key === estado)
+    const pasoActual = getPasoActual(estado)
+    const puedeRetrocederDesde = !ESTADOS_FINALES.includes(estado)
 
     if (cancelado) {
         return (
@@ -129,34 +153,58 @@ function BarraProgreso({ estado }: { estado: string }) {
     }
 
     return (
-        <div className="bg-gray-50 rounded-xl p-5">
-            <div className="flex items-start">
+        <div className="bg-gray-50 rounded-xl p-4">
+            <div className="grid grid-cols-6 gap-1">
                 {PASOS.map((paso, i) => {
-                    const completado = i <= pasoActual
-                    const esActual = i === pasoActual
+                    const completado = i < pasoActual
+                    const actual = i === pasoActual
+                    const esAnterior = i < pasoActual
+                    const clickable = esAdmin && puedeRetrocederDesde && esAnterior && !actual
 
                     return (
-                        <div key={paso.key} className="flex items-center flex-1 last:flex-initial">
-                            <div className="flex flex-col items-center gap-2">
+                        <div
+                            key={paso.key}
+                            className={`flex flex-col items-center gap-1.5 ${clickable ? 'cursor-pointer group' : ''}`}
+                            onClick={() => { if (clickable) onRetroceder(paso.key, paso.label) }}
+                            title={clickable ? `Retroceder a ${paso.label}` : undefined}
+                        >
+                            <div className="relative w-full flex items-center">
+                                {i > 0 && (
+                                    <div className={`h-0.5 flex-1 rounded ${i <= pasoActual ? 'bg-[#1A0087]' : 'bg-gray-200'}`} />
+                                )}
+                                {i === 0 && <div className="h-0.5 flex-1" />}
+
                                 <div
-                                    className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${completado
+                                    className={`relative z-10 flex w-6 h-6 items-center justify-center rounded-full shrink-0 transition-all ${completado
                                         ? 'bg-[#1A0087] text-white'
-                                        : 'bg-gray-200 text-gray-400'
-                                        }`}
+                                        : actual
+                                            ? 'bg-[#1A0087] ring-4 ring-[#1A0087]/15'
+                                            : 'border-2 border-gray-200 bg-white'
+                                        } ${clickable ? 'group-hover:ring-4 group-hover:ring-orange-300 group-hover:bg-orange-500' : ''}`}
                                 >
-                                    {completado ? <CheckIcon className="w-4 h-4" /> : <span>{i + 1}</span>}
+                                    {completado && <CheckIcon className="h-3.5 w-3.5" />}
+                                    {actual && <span className="h-2 w-2 rounded-full bg-white" />}
                                 </div>
-                                <span className={`text-[10px] font-medium whitespace-nowrap ${esActual ? 'text-[#1A0087]' : completado ? 'text-[#1A0087]/70' : 'text-gray-400'}`}>
-                                    {paso.label}
-                                </span>
+
+                                {i < PASOS.length - 1 && (
+                                    <div className={`h-0.5 flex-1 rounded ${i < pasoActual ? 'bg-[#1A0087]' : 'bg-gray-200'}`} />
+                                )}
+                                {i === PASOS.length - 1 && <div className="h-0.5 flex-1" />}
                             </div>
-                            {i < PASOS.length - 1 && (
-                                <div className={`h-1 flex-1 mx-2 -mt-6 rounded ${i < pasoActual ? 'bg-[#1A0087]' : 'bg-gray-200'}`} />
-                            )}
+                            <span className={`text-[10px] leading-tight text-center ${actual ? 'font-semibold text-[#1A0087]' : completado ? 'text-[#1A0087]/70' : 'text-gray-400'
+                                } ${clickable ? 'group-hover:text-orange-600 group-hover:font-semibold' : ''}`}>
+                                {paso.label}
+                            </span>
                         </div>
                     )
                 })}
             </div>
+
+            {esAdmin && puedeRetrocederDesde && pasoActual > 0 && (
+                <p className="text-[10px] text-orange-600 mt-3 text-center">
+                    💡 Como admin, puedes pulsar un paso anterior para retroceder el pedido.
+                </p>
+            )}
         </div>
     )
 }
@@ -174,28 +222,34 @@ export function PedidoDetalleModal({
 }: Props) {
     const [tab, setTab] = useState<Tab>('detalle')
     const [procesando, setProcesando] = useState(false)
+    const [errorAccion, setErrorAccion] = useState('')
 
-    // Edición
     const [modoEdicion, setModoEdicion] = useState(false)
     const [itemsEdit, setItemsEdit] = useState<ItemEdit[]>([])
     const [buscadorAbierto, setBuscadorAbierto] = useState(false)
     const [errorEdicion, setErrorEdicion] = useState('')
 
-    // Productos disponibles
     const [productosBodega, setProductosBodega] = useState<ProductoBusqueda[]>([])
     const [cargandoProductos, setCargandoProductos] = useState(false)
 
-    // Cancelación
     const [mostrarCancelar, setMostrarCancelar] = useState(false)
     const [motivoCancelar, setMotivoCancelar] = useState('')
     const [confirmadoCancelar, setConfirmadoCancelar] = useState(false)
     const [errorCancelar, setErrorCancelar] = useState('')
 
-    // Motivo de cancelación (si aplica)
+    const [mostrarRechazar, setMostrarRechazar] = useState(false)
+    const [motivoRechazar, setMotivoRechazar] = useState('')
+    const [confirmadoRechazar, setConfirmadoRechazar] = useState(false)
+    const [errorRechazar, setErrorRechazar] = useState('')
+
+    const [mostrarRetroceder, setMostrarRetroceder] = useState(false)
+    const [retrocesoDestino, setRetrocesoDestino] = useState<{ key: string; label: string } | null>(null)
+    const [motivoRetroceso, setMotivoRetroceso] = useState('')
+    const [confirmadoRetroceso, setConfirmadoRetroceso] = useState(false)
+    const [errorRetroceso, setErrorRetroceso] = useState('')
+
     const [motivoCancelado, setMotivoCancelado] = useState<string | null>(null)
     const [fechaCancelado, setFechaCancelado] = useState<string | null>(null)
-
-    // Motivo de reversión (si aplica)
     const [motivoReversion, setMotivoReversion] = useState<string | null>(null)
     const [fechaReversion, setFechaReversion] = useState<string | null>(null)
 
@@ -207,41 +261,49 @@ export function PedidoDetalleModal({
     const esDevuelto = pedido.estado === 'devuelto_por_cartera'
     const esCancelado = pedido.estado === 'cancelado'
     const esRechazado = ['rechazado_bodega', 'rechazado_cartera'].includes(pedido.estado)
-    const esCancelable = ['pendiente', 'aprobado_bodega', 'aprobado_cartera', 'devuelto_por_cartera'].includes(pedido.estado)
+    const esCancelable = !['cancelado', 'entregado'].includes(pedido.estado)
+    const esRechazable = esAdmin && !['rechazado_bodega', 'rechazado_cartera', 'cancelado', 'entregado', 'despachado'].includes(pedido.estado)
+    const puedeEditar = esAdmin && !['cancelado'].includes(pedido.estado)
 
-    const puedeEditar =
-        (pedido.estado === 'pendiente' && esBodeguero) ||
-        (esDevuelto && esAdmin)
-
-    // Reset al cambiar de pedido
     useEffect(() => {
         setTab('detalle')
         setMostrarCancelar(false)
+        setMostrarRechazar(false)
+        setMostrarRetroceder(false)
+        setRetrocesoDestino(null)
         setErrorEdicion('')
+        setErrorAccion('')
+        setErrorRechazar('')
+        setErrorRetroceso('')
 
-        if (abrirEnModoEdicion && (pedido.estado === 'pendiente' || pedido.estado === 'devuelto_por_cartera')) {
+        if (abrirEnModoEdicion && puedeEditar) {
             setItemsEdit(
-                pedido.detalle_pedido.map(d => ({
-                    producto_id: d.producto_id,
-                    cantidad: d.cantidad_solicitada,
-                    nombre: d.productos.nombre,
-                    precio: d.productos.precio,
-                }))
+                pedido.detalle_pedido.map(d => {
+                    const precioBase = d.precio_unitario ?? d.productos.precio
+                    return {
+                        producto_id: d.producto_id,
+                        cantidad: d.cantidad_solicitada,
+                        nombre: d.productos.nombre,
+                        precio: d.productos.precio,
+                        precio_unitario: precioBase,
+                        precioTexto: String(precioBase),
+                    }
+                })
             )
             setModoEdicion(true)
         } else {
             setModoEdicion(false)
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pedido.id, abrirEnModoEdicion])
 
-    // Cargar productos de la bodega (CON CAMPOS NUEVOS)
     useEffect(() => {
         const cargar = async () => {
             if (!bodegaId) return
             if (productosBodega.length > 0) return
             setCargandoProductos(true)
 
-            const { data } = await supabase
+            const { data, error } = await supabase
                 .from('inventario')
                 .select(`
                     cantidad_disponible,
@@ -252,6 +314,8 @@ export function PedidoDetalleModal({
                 `)
                 .eq('bodega_id', bodegaId)
                 .gt('cantidad_disponible', 0)
+
+            if (error) { console.error(error); setCargandoProductos(false); return }
 
             const items: ProductoBusqueda[] = (data || [])
                 .map((i: any) => ({
@@ -272,16 +336,10 @@ export function PedidoDetalleModal({
         cargar()
     }, [bodegaId, supabase, productosBodega.length])
 
-    // Cargar motivo de reversión
     useEffect(() => {
         const cargarMotivo = async () => {
-            if (!pedido.revertido) {
-                setMotivoReversion(null)
-                setFechaReversion(null)
-                return
-            }
-
-            const { data, error } = await supabase
+            if (!pedido.revertido) { setMotivoReversion(null); setFechaReversion(null); return }
+            const { data } = await supabase
                 .from('pedidos_historial')
                 .select('motivo_reversion, revertido_en, usuario_nombre')
                 .eq('pedido_id', pedido.id)
@@ -290,12 +348,6 @@ export function PedidoDetalleModal({
                 .order('revertido_en', { ascending: false })
                 .limit(1)
                 .maybeSingle()
-
-            if (error) {
-                console.error('Error cargando motivo de reversión:', error)
-                return
-            }
-
             if (data) {
                 setMotivoReversion(data.motivo_reversion || 'Sin motivo especificado')
                 setFechaReversion(data.revertido_en || null)
@@ -304,16 +356,10 @@ export function PedidoDetalleModal({
         cargarMotivo()
     }, [pedido.id, pedido.revertido, supabase])
 
-    // Cargar motivo de cancelación
     useEffect(() => {
         const cargarMotivoCancelacion = async () => {
-            if (pedido.estado !== 'cancelado') {
-                setMotivoCancelado(null)
-                setFechaCancelado(null)
-                return
-            }
-
-            const { data, error } = await supabase
+            if (pedido.estado !== 'cancelado') { setMotivoCancelado(null); setFechaCancelado(null); return }
+            const { data } = await supabase
                 .from('pedidos_historial')
                 .select('observacion, cambios, fecha')
                 .eq('pedido_id', pedido.id)
@@ -321,12 +367,6 @@ export function PedidoDetalleModal({
                 .order('fecha', { ascending: false })
                 .limit(1)
                 .maybeSingle()
-
-            if (error) {
-                console.error('Error cargando motivo de cancelación:', error)
-                return
-            }
-
             if (data) {
                 const motivo = data.cambios?.motivo || data.observacion || 'Sin motivo especificado'
                 setMotivoCancelado(motivo)
@@ -336,17 +376,174 @@ export function PedidoDetalleModal({
         cargarMotivoCancelacion()
     }, [pedido.id, pedido.estado, supabase])
 
-    // ─────────────────────────────────────────────────────
-    // Edición
-    // ─────────────────────────────────────────────────────
+    const registrarHistorial = async (
+        accion: string,
+        estadoAnterior: string,
+        estadoNuevo: string,
+        observacion: string
+    ) => {
+        const { registrarCambioHistorial } = await import('@/lib/utils/historial')
+        await registrarCambioHistorial({
+            pedidoId: pedido.id,
+            accion: accion as any,
+            estadoAnterior,
+            estadoNuevo,
+            observacion,
+        })
+    }
+
+    const cambiarEstado = async (estadoAnterior: string, estadoNuevo: string, observacion: string, accion: string = 'editado') => {
+        if (procesando) return
+        setProcesando(true)
+        setErrorAccion('')
+
+        const { data, error } = await supabase
+            .from('pedidos')
+            .update({ estado: estadoNuevo })
+            .eq('id', pedido.id)
+            .eq('estado', estadoAnterior)
+            .select('id')
+
+        if (error) { setErrorAccion('Error: ' + error.message); setProcesando(false); return }
+        if (!data || data.length === 0) {
+            setErrorAccion('El pedido cambió de estado. Recarga.')
+            setProcesando(false); onRefresh(); return
+        }
+
+        await registrarHistorial(accion, estadoAnterior, estadoNuevo, observacion)
+        setProcesando(false)
+        onRefresh()
+        onClose()
+    }
+
+    const handleAceptar = () => cambiarEstado('aprobado_cartera', 'en_preparacion', 'Bodega aceptó y empieza a alistar')
+    const handleMarcarListo = () => cambiarEstado('en_preparacion', 'listo_para_despacho', 'Bodega terminó el alistamiento')
+
+    const handleDespachar = async () => {
+        if (procesando) return
+        setProcesando(true)
+        setErrorAccion('')
+
+        const p_cantidades = pedido.detalle_pedido.map(d => ({
+            detalle_id: d.id,
+            cantidad: d.cantidad_aprobada ?? d.cantidad_solicitada,
+        }))
+
+        const { error: errRpc } = await supabase.rpc('despachar_pedido', {
+            p_pedido: pedido.id,
+            p_cantidades,
+        })
+
+        if (errRpc) { setErrorAccion('No se pudo despachar: ' + errRpc.message); setProcesando(false); return }
+        setProcesando(false); onRefresh(); onClose()
+    }
+
+    const handleMarcarEntregado = () => cambiarEstado('despachado', 'entregado', 'Pedido entregado al cliente', 'entregado')
+
+    const iniciarRetroceso = (pasoKey: string, pasoLabel: string) => {
+        setRetrocesoDestino({ key: pasoKey, label: pasoLabel })
+        setMotivoRetroceso('')
+        setConfirmadoRetroceso(false)
+        setErrorRetroceso('')
+        setMostrarRetroceder(true)
+    }
+
+    const confirmarRetroceso = async () => {
+        if (!retrocesoDestino || procesando) return
+        setErrorRetroceso('')
+
+        if (motivoRetroceso.trim().length < 10) { setErrorRetroceso('El motivo debe tener al menos 10 caracteres.'); return }
+        if (!confirmadoRetroceso) { setErrorRetroceso('Debes marcar la casilla de confirmación.'); return }
+
+        setProcesando(true)
+
+        const { data, error } = await supabase
+            .from('pedidos')
+            .update({ estado: retrocesoDestino.key })
+            .eq('id', pedido.id)
+            .eq('estado', pedido.estado)
+            .select('id')
+
+        if (error) { setErrorRetroceso('Error: ' + error.message); setProcesando(false); return }
+        if (!data || data.length === 0) { setErrorRetroceso('El pedido cambió de estado. Recarga.'); setProcesando(false); return }
+
+        await registrarHistorial('revertido', pedido.estado, retrocesoDestino.key, `Retroceso manual por admin. Motivo: ${motivoRetroceso.trim()}`)
+
+        setProcesando(false)
+        setMostrarRetroceder(false)
+        setRetrocesoDestino(null)
+        onRefresh()
+        onClose()
+    }
+
+    const confirmarRechazo = async () => {
+        if (procesando) return
+        setErrorRechazar('')
+
+        if (motivoRechazar.trim().length < 10) { setErrorRechazar('El motivo debe tener al menos 10 caracteres.'); return }
+        if (!confirmadoRechazar) { setErrorRechazar('Debes marcar la casilla de confirmación.'); return }
+
+        setProcesando(true)
+
+        const { data, error } = await supabase
+            .from('pedidos')
+            .update({ estado: 'rechazado_bodega' })
+            .eq('id', pedido.id)
+            .eq('estado', pedido.estado)
+            .select('id')
+
+        if (error) { setErrorRechazar('Error: ' + error.message); setProcesando(false); return }
+        if (!data || data.length === 0) { setErrorRechazar('El pedido cambió de estado. Recarga.'); setProcesando(false); return }
+
+        await registrarHistorial('rechazado_bodega', pedido.estado, 'rechazado_bodega', `Rechazado por admin. Motivo: ${motivoRechazar.trim()}`)
+
+        setProcesando(false)
+        setMostrarRechazar(false)
+        onRefresh()
+        onClose()
+    }
+
+    const handleDevolverABodega = async () => {
+        if (procesando) return
+        setProcesando(true)
+        const { error } = await supabase.from('pedidos').update({ estado: 'pendiente' }).eq('id', pedido.id)
+        if (error) { alert('Error: ' + error.message); setProcesando(false); return }
+        await registrarHistorial('editado', 'devuelto_por_cartera', 'pendiente', 'Admin devolvió el pedido a bodega sin cambios')
+        setProcesando(false)
+        onRefresh()
+        onClose()
+    }
+
+    const handleCancelar = async () => {
+        if (procesando) return
+        setErrorCancelar('')
+
+        if (motivoCancelar.trim().length < 10) { setErrorCancelar('El motivo debe tener al menos 10 caracteres.'); return }
+        if (!confirmadoCancelar) { setErrorCancelar('Debes marcar la casilla de confirmación.'); return }
+
+        setProcesando(true)
+        const { cancelarPedido: cancelarFn } = await import('@/lib/utils/historial')
+        const res = await cancelarFn({ pedidoId: pedido.id, motivo: motivoCancelar })
+        setProcesando(false)
+        if (!res.ok) { setErrorCancelar(res.error || 'Error al cancelar'); return }
+        setMostrarCancelar(false)
+        onRefresh()
+        onClose()
+    }
+
     const iniciarEdicion = () => {
         setItemsEdit(
-            pedido.detalle_pedido.map(d => ({
-                producto_id: d.producto_id,
-                cantidad: d.cantidad_solicitada,
-                nombre: d.productos.nombre,
-                precio: d.productos.precio,
-            }))
+            pedido.detalle_pedido.map(d => {
+                const precioBase = d.precio_unitario ?? d.productos.precio
+                return {
+                    producto_id: d.producto_id,
+                    cantidad: d.cantidad_solicitada,
+                    nombre: d.productos.nombre,
+                    precio: d.productos.precio,
+                    precio_unitario: precioBase,
+                    precioTexto: String(precioBase),
+                }
+            })
         )
         setErrorEdicion('')
         setModoEdicion(true)
@@ -364,7 +561,10 @@ export function PedidoDetalleModal({
             setErrorEdicion('Ese producto ya está en el pedido')
             return
         }
-        setItemsEdit([...itemsEdit, { producto_id: p.id, cantidad: 1, nombre: p.nombre, precio: p.precio }])
+        setItemsEdit([...itemsEdit, {
+            producto_id: p.id, cantidad: 1, nombre: p.nombre,
+            precio: p.precio, precio_unitario: p.precio, precioTexto: String(p.precio),
+        }])
         setErrorEdicion('')
     }
 
@@ -376,36 +576,45 @@ export function PedidoDetalleModal({
     const cambiarCantidad = (productoId: string, valor: string) => {
         const soloNumeros = valor.replace(/\D/g, '')
         if (soloNumeros === '') {
-            setItemsEdit(itemsEdit.map(it =>
-                it.producto_id === productoId ? { ...it, cantidad: '' } : it
-            ))
-            setErrorEdicion('')
+            setItemsEdit(itemsEdit.map(it => it.producto_id === productoId ? { ...it, cantidad: '' } : it))
             return
         }
         const num = parseInt(soloNumeros)
-        if (num === 0) {
-            setItemsEdit(itemsEdit.filter(it => it.producto_id !== productoId))
-            setErrorEdicion('')
-            return
-        }
-        setItemsEdit(itemsEdit.map(it =>
-            it.producto_id === productoId ? { ...it, cantidad: num } : it
-        ))
-        setErrorEdicion('')
+        if (num === 0) { setItemsEdit(itemsEdit.filter(it => it.producto_id !== productoId)); return }
+        setItemsEdit(itemsEdit.map(it => it.producto_id === productoId ? { ...it, cantidad: num } : it))
+    }
+
+    const cambiarPrecioTexto = (productoId: string, valor: string) => {
+        const limpio = valor.replace(/[^0-9]/g, '')
+        setItemsEdit(itemsEdit.map(it => {
+            if (it.producto_id !== productoId) return it
+            if (limpio === '') return { ...it, precioTexto: '', precio_unitario: 0 }
+            return { ...it, precioTexto: limpio, precio_unitario: parseInt(limpio) }
+        }))
+    }
+
+    const handleBlurPrecio = (productoId: string) => {
+        setItemsEdit(itemsEdit.map(it => {
+            if (it.producto_id !== productoId) return it
+            const num = parseInt(it.precioTexto || '0')
+            if (!it.precioTexto || isNaN(num) || num < it.precio) {
+                return { ...it, precio_unitario: it.precio, precioTexto: String(it.precio) }
+            }
+            return it
+        }))
     }
 
     const handleBlurCantidad = (productoId: string) => {
         setItemsEdit(itemsEdit.map(it =>
-            it.producto_id === productoId && it.cantidad === ''
-                ? { ...it, cantidad: 1 }
-                : it
+            it.producto_id === productoId && it.cantidad === '' ? { ...it, cantidad: 1 } : it
         ))
     }
 
     const resumenEdicion = useMemo(() => {
         const subtotal = itemsEdit.reduce((acc, it) => {
             const cant = typeof it.cantidad === 'number' ? it.cantidad : 0
-            return acc + (it.precio * cant)
+            const precio = it.precio_unitario ?? it.precio
+            return acc + (precio * cant)
         }, 0)
         const porcentaje = calcularDescuento(subtotal)
         const descuento = Math.round(subtotal * (porcentaje / 100))
@@ -417,130 +626,33 @@ export function PedidoDetalleModal({
         if (procesando) return
         setErrorEdicion('')
 
-        if (itemsEdit.length === 0) {
-            setErrorEdicion('El pedido debe tener al menos 1 producto. Si quieres vaciarlo, cancela el pedido.')
-            return
-        }
-
+        if (itemsEdit.length === 0) { setErrorEdicion('El pedido debe tener al menos 1 producto.'); return }
         const hayCantidadInvalida = itemsEdit.some(it =>
             it.cantidad === '' || typeof it.cantidad !== 'number' || it.cantidad <= 0
         )
-        if (hayCantidadInvalida) {
-            setErrorEdicion('Todas las cantidades deben ser mayores a 0. Verifica los productos.')
-            return
-        }
+        if (hayCantidadInvalida) { setErrorEdicion('Todas las cantidades deben ser mayores a 0.'); return }
+
+        const itemsAjustados = itemsEdit.map(it => {
+            const num = it.precio_unitario ?? 0
+            if (!num || num < it.precio) return { ...it, precio_unitario: it.precio }
+            return it
+        })
 
         setProcesando(true)
-
-        const { data, error } = await supabase.rpc('editar_pedido_completo', {
+        const { error } = await supabase.rpc('editar_pedido_completo', {
             p_pedido_id: pedido.id,
-            p_items: itemsEdit.map(it => ({
+            p_items: itemsAjustados.map(it => ({
                 producto_id: it.producto_id,
                 cantidad: typeof it.cantidad === 'number' ? it.cantidad : 0,
+                precio_unitario: it.precio_unitario,
             })),
         })
-
         setProcesando(false)
 
-        if (error) {
-            console.error('Error RPC:', error)
-            setErrorEdicion(error.message || 'Error al guardar los cambios')
-            return
-        }
-
-        if (esDevuelto) {
-            await supabase
-                .from('pedidos')
-                .update({ estado: 'pendiente' })
-                .eq('id', pedido.id)
-        }
-
-        const { registrarCambioHistorial } = await import('@/lib/utils/historial')
-        await registrarCambioHistorial({
-            pedidoId: pedido.id,
-            accion: 'editado',
-            estadoAnterior: pedido.estado,
-            estadoNuevo: esDevuelto ? 'pendiente' : pedido.estado,
-            observacion: esDevuelto
-                ? `Pedido devuelto por cartera, editado por admin y devuelto a bodega`
-                : `Pedido editado (${itemsEdit.length} ${itemsEdit.length === 1 ? 'producto' : 'productos'})`,
-            cambios: {
-                productos_modificados: itemsEdit.map(it => ({
-                    producto_id: it.producto_id,
-                    cantidad: it.cantidad,
-                })),
-            },
-        })
+        if (error) { setErrorEdicion(error.message || 'Error al guardar'); return }
 
         setModoEdicion(false)
         setItemsEdit([])
-        onRefresh()
-        onClose()
-    }
-
-    // ─────────────────────────────────────────────────────
-    // Devolver a bodega
-    // ─────────────────────────────────────────────────────
-    const handleDevolverABodega = async () => {
-        if (procesando) return
-        setProcesando(true)
-
-        const { error } = await supabase
-            .from('pedidos')
-            .update({ estado: 'pendiente' })
-            .eq('id', pedido.id)
-
-        if (error) {
-            console.error('Error devolviendo a bodega:', error)
-            alert('Error al devolver a bodega: ' + error.message)
-            setProcesando(false)
-            return
-        }
-
-        const { registrarCambioHistorial } = await import('@/lib/utils/historial')
-        await registrarCambioHistorial({
-            pedidoId: pedido.id,
-            accion: 'editado',
-            estadoAnterior: 'devuelto_por_cartera',
-            estadoNuevo: 'pendiente',
-            observacion: 'Admin devolvió el pedido a bodega sin cambios',
-        })
-
-        setProcesando(false)
-        onRefresh()
-        onClose()
-    }
-
-    // ─────────────────────────────────────────────────────
-    // Cancelación
-    // ─────────────────────────────────────────────────────
-    const handleCancelar = async () => {
-        if (procesando) return
-        setErrorCancelar('')
-
-        if (motivoCancelar.trim().length < 10) {
-            setErrorCancelar('El motivo debe tener al menos 10 caracteres.')
-            return
-        }
-        if (!confirmadoCancelar) {
-            setErrorCancelar('Debes marcar la casilla de confirmación.')
-            return
-        }
-
-        setProcesando(true)
-        const { cancelarPedido: cancelarFn } = await import('@/lib/utils/historial')
-        const res = await cancelarFn({
-            pedidoId: pedido.id,
-            motivo: motivoCancelar,
-        })
-        setProcesando(false)
-
-        if (!res.ok) {
-            setErrorCancelar(res.error || 'Error al cancelar')
-            return
-        }
-
-        setMostrarCancelar(false)
         onRefresh()
         onClose()
     }
@@ -556,56 +668,33 @@ export function PedidoDetalleModal({
                     <div className="flex items-start justify-between gap-3 p-5">
                         <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 flex-wrap">
-                                <h2 className="text-lg font-bold text-[#232323]">
-                                    Pedido #{String(pedido.id).slice(0, 8)}
-                                </h2>
-                                {pedido.revertido && (
-                                    <span className="bg-orange-100 text-orange-700 border border-orange-300 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1">
-                                        🔄 REVERTIDO
-                                    </span>
-                                )}
-                                {esDevuelto && (
-                                    <span className="bg-orange-100 text-orange-700 border border-orange-300 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1">
-                                        🔙 DEVUELTO POR CARTERA
-                                    </span>
-                                )}
-                                {esCancelado && (
-                                    <span className="bg-red-100 text-red-700 border border-red-300 px-2 py-0.5 rounded text-[10px] font-bold">
-                                        CANCELADO
-                                    </span>
-                                )}
+                                <h2 className="text-lg font-bold text-[#232323]">Pedido #{String(pedido.id).slice(0, 8)}</h2>
+                                {pedido.revertido && <span className="bg-orange-100 text-orange-700 border border-orange-300 px-2 py-0.5 rounded text-[10px] font-bold">🔄 REVERTIDO</span>}
+                                {esDevuelto && <span className="bg-orange-100 text-orange-700 border border-orange-300 px-2 py-0.5 rounded text-[10px] font-bold">🔙 DEVUELTO</span>}
+                                {esCancelado && <span className="bg-red-100 text-red-700 border border-red-300 px-2 py-0.5 rounded text-[10px] font-bold">CANCELADO</span>}
                             </div>
                             <div className="flex items-center gap-2 mt-2 flex-wrap text-xs text-[#828282]">
-                                {pedido.numero_cotizacion && (
-                                    <span className="font-mono text-[#1A0087] font-semibold">
-                                        {pedido.numero_cotizacion}
-                                    </span>
-                                )}
-                                {pedido.numero_factura && (
-                                    <>
-                                        <span>·</span>
-                                        <span className="text-blue-600 font-medium">{pedido.numero_factura}</span>
-                                    </>
-                                )}
+                                {pedido.numero_cotizacion && <span className="font-mono text-[#1A0087] font-semibold">{pedido.numero_cotizacion}</span>}
+                                {pedido.numero_factura && <><span>·</span><span className="text-blue-600 font-medium">{pedido.numero_factura}</span></>}
                                 <span>·</span>
                                 <span>{formatFecha(pedido.fecha)}</span>
                             </div>
                         </div>
-                        <button
-                            onClick={modoEdicion ? cancelarEdicion : onClose}
-                            className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 active:bg-gray-200 transition-colors"
-                            aria-label="Cerrar"
-                        >
+                        <button onClick={modoEdicion ? cancelarEdicion : onClose} className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100">
                             <XMarkIcon className="w-5 h-5" />
                         </button>
                     </div>
 
                     {modoEdicion && (
-                        <div className="px-5 pb-3">
+                        <div className="px-5 pb-3 space-y-2">
                             <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-2">
                                 <PencilIcon className="w-4 h-4 text-blue-600 shrink-0" />
-                                <p className="text-xs text-blue-800 font-medium">
-                                    Modo edición — cambia cantidades, agrega o elimina productos
+                                <p className="text-xs text-blue-800 font-medium">Modo edición</p>
+                            </div>
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                                <ExclamationTriangleIcon className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                <p className="text-xs text-amber-800">
+                                    Al guardar, el pedido volverá a <strong>pendiente</strong> para que cartera lo apruebe de nuevo. La cotización anterior se descarta.
                                 </p>
                             </div>
                         </div>
@@ -613,24 +702,9 @@ export function PedidoDetalleModal({
 
                     {!modoEdicion && (
                         <div className="flex border-t border-gray-100">
-                            <TabButton
-                                active={tab === 'detalle'}
-                                onClick={() => setTab('detalle')}
-                                icon={<BanknotesIcon className="w-4 h-4" />}
-                                label="Detalle"
-                            />
-                            <TabButton
-                                active={tab === 'timeline'}
-                                onClick={() => setTab('timeline')}
-                                icon={<ClockIcon className="w-4 h-4" />}
-                                label="Historial"
-                            />
-                            <TabButton
-                                active={tab === 'cotizacion'}
-                                onClick={() => setTab('cotizacion')}
-                                icon={<DocumentTextIcon className="w-4 h-4" />}
-                                label="Cotización"
-                            />
+                            <TabButton active={tab === 'detalle'} onClick={() => setTab('detalle')} icon={<BanknotesIcon className="w-4 h-4" />} label="Detalle" />
+                            <TabButton active={tab === 'timeline'} onClick={() => setTab('timeline')} icon={<ClockIcon className="w-4 h-4" />} label="Historial" />
+                            <TabButton active={tab === 'cotizacion'} onClick={() => setTab('cotizacion')} icon={<DocumentTextIcon className="w-4 h-4" />} label="Cotización" />
                         </div>
                     )}
                 </div>
@@ -638,86 +712,58 @@ export function PedidoDetalleModal({
                 {/* BODY */}
                 <div className="flex-1 overflow-y-auto bg-[#F7F7FB]">
 
+                    {errorAccion && (
+                        <div className="m-5 bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{errorAccion}</div>
+                    )}
+
                     {/* MODO EDICIÓN */}
                     {modoEdicion && (
                         <div className="p-5 space-y-4">
                             <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                                <div className="flex items-center justify-between mb-4">
-                                    <p className="text-xs font-semibold text-[#828282] uppercase tracking-wide">
-                                        Productos ({itemsEdit.length})
-                                    </p>
-                                </div>
+                                <p className="text-xs font-semibold text-[#828282] uppercase mb-4">Productos ({itemsEdit.length})</p>
 
                                 {itemsEdit.length === 0 ? (
-                                    <p className="text-sm text-center text-[#828282] py-6">
-                                        No hay productos. Agrega al menos uno para continuar.
-                                    </p>
+                                    <p className="text-sm text-center text-[#828282] py-6">No hay productos.</p>
                                 ) : (
                                     <div className="space-y-3">
                                         {itemsEdit.map(it => {
                                             const cantNum = typeof it.cantidad === 'number' ? it.cantidad : 0
-                                            const subtotalLinea = it.precio * cantNum
+                                            const precioFinal = it.precio_unitario || it.precio
+                                            const subtotalLinea = precioFinal * cantNum
                                             return (
-                                                <div
-                                                    key={it.producto_id}
-                                                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl"
-                                                >
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="text-sm font-medium text-[#232323] truncate">
-                                                            {it.nombre}
-                                                        </p>
-                                                        {it.precio > 0 && (
-                                                            <p className="text-[11px] text-[#828282] mt-0.5 tabular-nums">
-                                                                {formatCOP(it.precio)} c/u · subtotal {formatCOP(subtotalLinea)}
-                                                            </p>
-                                                        )}
+                                                <div key={it.producto_id} className="p-3 bg-gray-50 rounded-xl space-y-2">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-sm font-medium text-[#232323] truncate">{it.nombre}</p>
+                                                            <p className="text-[11px] text-[#828282] mt-0.5">Mínimo: {formatCOP(it.precio)} · subtotal {formatCOP(subtotalLinea)}</p>
+                                                        </div>
+                                                        <button onClick={() => eliminarProducto(it.producto_id)} disabled={procesando} className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50">
+                                                            <TrashIcon className="w-4 h-4" />
+                                                        </button>
                                                     </div>
 
-                                                    <input
-                                                        type="text"
-                                                        inputMode="numeric"
-                                                        pattern="[0-9]*"
-                                                        value={it.cantidad}
-                                                        onChange={e => cambiarCantidad(it.producto_id, e.target.value)}
-                                                        onFocus={e => e.target.select()}
-                                                        onBlur={() => handleBlurCantidad(it.producto_id)}
-                                                        disabled={procesando}
-                                                        className="w-16 border border-gray-300 rounded-lg p-2 text-sm text-center font-semibold tabular-nums focus:outline-none focus:ring-2 focus:ring-[#1A0087]/30 focus:border-[#1A0087] disabled:opacity-50"
-                                                        aria-label={`Cantidad de ${it.nombre}`}
-                                                    />
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="block text-[10px] text-[#828282] mb-1">Cantidad</label>
+                                                            <input type="text" inputMode="numeric" value={it.cantidad} onChange={e => cambiarCantidad(it.producto_id, e.target.value)} onFocus={e => e.target.select()} onBlur={() => handleBlurCantidad(it.producto_id)} disabled={procesando} className="w-full border border-gray-300 rounded-lg p-2 text-sm text-center font-semibold" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] text-[#828282] mb-1">Precio unitario</label>
+                                                            <input type="text" inputMode="numeric" value={it.precioTexto} onChange={e => cambiarPrecioTexto(it.producto_id, e.target.value)} onFocus={e => e.target.select()} onBlur={() => handleBlurPrecio(it.producto_id)} placeholder={String(it.precio)} disabled={procesando} className="w-full border border-gray-300 rounded-lg p-2 text-sm text-right font-semibold" />
+                                                        </div>
+                                                    </div>
 
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => eliminarProducto(it.producto_id)}
-                                                        disabled={procesando}
-                                                        className="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 active:bg-red-100 disabled:opacity-50 transition-colors"
-                                                        aria-label={`Eliminar ${it.nombre}`}
-                                                    >
-                                                        <TrashIcon className="w-4 h-4" />
-                                                    </button>
+                                                    {precioFinal > it.precio && (
+                                                        <p className="text-[10px] text-green-700">↑ Subido {formatCOP(precioFinal - it.precio)} sobre el mínimo</p>
+                                                    )}
                                                 </div>
                                             )
                                         })}
                                     </div>
                                 )}
 
-                                <button
-                                    type="button"
-                                    onClick={() => setBuscadorAbierto(true)}
-                                    disabled={procesando || cargandoProductos}
-                                    className="mt-4 w-full min-h-[48px] py-3 border-2 border-dashed border-[#1A0087]/30 rounded-xl text-sm font-semibold text-[#1A0087] hover:bg-[#1A0087]/5 active:bg-[#1A0087]/10 disabled:opacity-50 flex items-center justify-center gap-2 transition-colors"
-                                >
-                                    {cargandoProductos ? (
-                                        <>
-                                            <div className="w-5 h-5 border-2 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
-                                            Cargando...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <PlusIcon className="w-5 h-5" />
-                                            Agregar producto
-                                        </>
-                                    )}
+                                <button onClick={() => setBuscadorAbierto(true)} disabled={procesando || cargandoProductos} className="mt-4 w-full min-h-[48px] py-3 border-2 border-dashed border-[#1A0087]/30 rounded-xl text-sm font-semibold text-[#1A0087] flex items-center justify-center gap-2">
+                                    {cargandoProductos ? 'Cargando...' : <><PlusIcon className="w-5 h-5" />Agregar producto</>}
                                 </button>
                             </div>
 
@@ -729,25 +775,15 @@ export function PedidoDetalleModal({
                             )}
 
                             <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                                <p className="text-xs font-semibold text-[#828282] uppercase tracking-wide mb-3">
-                                    Resumen
-                                </p>
+                                <p className="text-xs font-semibold text-[#828282] uppercase mb-3">Resumen</p>
                                 <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between text-[#828282]">
-                                        <span>Subtotal</span>
-                                        <span className="tabular-nums">{formatCOP(resumenEdicion.subtotal)}</span>
-                                    </div>
+                                    <div className="flex justify-between text-[#828282]"><span>Subtotal</span><span>{formatCOP(resumenEdicion.subtotal)}</span></div>
                                     {resumenEdicion.porcentaje > 0 && (
-                                        <div className="flex justify-between text-green-600">
-                                            <span>Descuento ({resumenEdicion.porcentaje}%)</span>
-                                            <span className="tabular-nums">- {formatCOP(resumenEdicion.descuento)}</span>
-                                        </div>
+                                        <div className="flex justify-between text-green-600"><span>Descuento ({resumenEdicion.porcentaje}%)</span><span>- {formatCOP(resumenEdicion.descuento)}</span></div>
                                     )}
                                     <div className="flex justify-between items-baseline pt-3 border-t border-gray-100 mt-2">
                                         <span className="font-semibold text-[#232323] text-base">Total</span>
-                                        <span className="text-xl font-bold text-[#1A0087] tabular-nums">
-                                            {formatCOP(resumenEdicion.total)}
-                                        </span>
+                                        <span className="text-xl font-bold text-[#1A0087]">{formatCOP(resumenEdicion.total)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -757,40 +793,14 @@ export function PedidoDetalleModal({
                     {/* TAB DETALLE */}
                     {!modoEdicion && tab === 'detalle' && (
                         <div className="p-5 space-y-5">
-                            <BarraProgreso estado={pedido.estado} />
+                            <BarraProgreso estado={pedido.estado} esAdmin={esAdmin} onRetroceder={iniciarRetroceso} />
 
                             {pedido.revertido && (
                                 <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
                                     <ArrowPathIcon className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
-                                    <div className="min-w-0 flex-1">
+                                    <div>
                                         <p className="font-semibold text-orange-800 text-sm">Pedido revertido</p>
-
-                                        {motivoReversion ? (
-                                            <>
-                                                <p className="text-xs text-orange-700 mt-1.5">
-                                                    <span className="font-semibold">Motivo:</span> {motivoReversion}
-                                                </p>
-                                                {fechaReversion && (
-                                                    <p className="text-[10px] text-orange-600 mt-1">
-                                                        Revertido el {new Date(fechaReversion).toLocaleString('es-CO', {
-                                                            day: '2-digit',
-                                                            month: 'short',
-                                                            year: 'numeric',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit',
-                                                        })}
-                                                    </p>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <p className="text-xs text-orange-700 mt-1">
-                                                Cargando motivo...
-                                            </p>
-                                        )}
-
-                                        <p className="text-[11px] text-orange-600 mt-2 italic">
-                                            Verifica las cantidades antes de volver a despachar.
-                                        </p>
+                                        {motivoReversion && <p className="text-xs text-orange-700 mt-1.5"><span className="font-semibold">Motivo:</span> {motivoReversion}</p>}
                                     </div>
                                 </div>
                             )}
@@ -800,9 +810,7 @@ export function PedidoDetalleModal({
                                     <ArrowUturnLeftIcon className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
                                     <div>
                                         <p className="font-semibold text-orange-800 text-sm">Devuelto por cartera</p>
-                                        <p className="text-xs text-orange-700 mt-1">
-                                            Cartera devolvió este pedido. El admin debe revisarlo y decidir si devolverlo a bodega o cancelarlo.
-                                        </p>
+                                        <p className="text-xs text-orange-700 mt-1">El admin debe revisarlo.</p>
                                     </div>
                                 </div>
                             )}
@@ -810,30 +818,9 @@ export function PedidoDetalleModal({
                             {esCancelado && (
                                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
                                     <XMarkIcon className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-                                    <div className="min-w-0 flex-1">
+                                    <div>
                                         <p className="font-semibold text-red-800 text-sm">Pedido cancelado</p>
-                                        {motivoCancelado ? (
-                                            <>
-                                                <p className="text-xs text-red-700 mt-1.5">
-                                                    <span className="font-semibold">Motivo:</span> {motivoCancelado}
-                                                </p>
-                                                {fechaCancelado && (
-                                                    <p className="text-[10px] text-red-600 mt-1">
-                                                        Cancelado el {new Date(fechaCancelado).toLocaleString('es-CO', {
-                                                            day: '2-digit',
-                                                            month: 'short',
-                                                            year: 'numeric',
-                                                            hour: '2-digit',
-                                                            minute: '2-digit',
-                                                        })}
-                                                    </p>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <p className="text-xs text-red-700 mt-1">
-                                                Cargando motivo...
-                                            </p>
-                                        )}
+                                        {motivoCancelado && <p className="text-xs text-red-700 mt-1.5"><span className="font-semibold">Motivo:</span> {motivoCancelado}</p>}
                                     </div>
                                 </div>
                             )}
@@ -844,61 +831,50 @@ export function PedidoDetalleModal({
                                         <UserIcon className="w-6 h-6 text-[#1A0087]" />
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                        <p className="text-xs font-semibold text-[#828282] uppercase tracking-wide mb-1">
-                                            Cliente
-                                        </p>
-                                        <p className="font-semibold text-[#232323] text-base">
-                                            {pedido.clientes?.nombre || 'Sin cliente'}
-                                        </p>
-                                        {pedido.clientes?.cc_nit && (
-                                            <p className="text-sm text-[#828282] mt-1">
-                                                CC/NIT: {pedido.clientes.cc_nit}
-                                            </p>
-                                        )}
+                                        <p className="text-xs font-semibold text-[#828282] uppercase mb-1">Cliente</p>
+                                        <p className="font-semibold text-[#232323] text-base">{pedido.clientes?.nombre || 'Sin cliente'}</p>
+                                        {pedido.clientes?.cc_nit && <p className="text-sm text-[#828282] mt-1">CC/NIT: {pedido.clientes.cc_nit}</p>}
                                         {pedido.clientes?.telefono && (
                                             <p className="text-sm text-[#828282] mt-0.5 flex items-center gap-1.5">
-                                                <PhoneIcon className="w-3.5 h-3.5" />
-                                                {pedido.clientes.telefono}
+                                                <PhoneIcon className="w-3.5 h-3.5" />{pedido.clientes.telefono}
                                             </p>
                                         )}
-                                        <p className="text-xs text-[#828282] mt-2">
-                                            Vendedor: <span className="font-medium text-[#232323]">{pedido.usuarios?.nombre || 'N/A'}</span>
-                                        </p>
+                                        <p className="text-xs text-[#828282] mt-2">Vendedor: <span className="font-medium text-[#232323]">{pedido.usuarios?.nombre || 'N/A'}</span></p>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="bg-white rounded-2xl border border-gray-100 p-5">
                                 <div className="flex items-center justify-between mb-4">
-                                    <p className="text-xs font-semibold text-[#828282] uppercase tracking-wide">
-                                        Productos
-                                    </p>
+                                    <p className="text-xs font-semibold text-[#828282] uppercase">Productos</p>
                                     <span className="text-xs text-[#828282] bg-gray-100 px-2 py-0.5 rounded-full font-medium">
                                         {pedido.detalle_pedido.length} {pedido.detalle_pedido.length === 1 ? 'item' : 'items'}
                                     </span>
                                 </div>
-
                                 <div className="divide-y divide-gray-100">
                                     {pedido.detalle_pedido.map(d => {
                                         const cantidad = d.cantidad_aprobada ?? d.cantidad_solicitada
+                                        const precioBase = d.productos.precio
+                                        const precioUnit = d.precio_unitario ?? precioBase
+                                        const subido = d.precio_unitario != null && d.precio_unitario > precioBase
                                         return (
-                                            <div key={d.id} className="py-3 flex items-center justify-between gap-3">
+                                            <div key={d.id} className={`py-3 flex items-center justify-between gap-3 ${subido ? 'bg-amber-50/50 -mx-2 px-2 rounded-lg' : ''}`}>
                                                 <div className="min-w-0 flex-1">
-                                                    <p className="text-sm font-medium text-[#232323] truncate">
-                                                        {d.productos.nombre}
-                                                    </p>
-                                                    {d.productos.codigo && (
-                                                        <p className="text-[11px] text-[#828282] font-mono mt-0.5">
-                                                            {d.productos.codigo}
+                                                    <p className="text-sm font-medium text-[#232323] truncate">{d.productos.nombre}</p>
+                                                    {d.productos.codigo && <p className="text-[11px] text-[#828282] font-mono mt-0.5">{d.productos.codigo}</p>}
+                                                    {subido && (
+                                                        <p className="text-[11px] mt-1 tabular-nums flex items-center gap-1 flex-wrap">
+                                                            <span className="text-[#828282]">{formatCOP(precioBase)}</span>
+                                                            <span className="text-[#828282]">→</span>
+                                                            <span className="text-amber-700 font-semibold">{formatCOP(precioUnit)}</span>
+                                                            <span className="text-amber-600 font-bold">*</span>
                                                         </p>
                                                     )}
                                                 </div>
                                                 <div className="text-right shrink-0">
-                                                    <p className="text-sm font-semibold text-[#232323] tabular-nums">
-                                                        ×{cantidad}
-                                                    </p>
-                                                    <p className="text-xs text-[#828282] tabular-nums">
-                                                        {formatCOP(d.productos.precio)}
+                                                    <p className="text-sm font-semibold text-[#232323] tabular-nums">×{cantidad}</p>
+                                                    <p className={`text-xs tabular-nums ${subido ? 'text-amber-700 font-semibold' : 'text-[#828282]'}`}>
+                                                        {formatCOP(precioUnit)}{subido && <span className="text-amber-600 font-bold ml-0.5">*</span>}
                                                     </p>
                                                 </div>
                                             </div>
@@ -908,37 +884,23 @@ export function PedidoDetalleModal({
                             </div>
 
                             <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                                <p className="text-xs font-semibold text-[#828282] uppercase tracking-wide mb-3">
-                                    Resumen
-                                </p>
+                                <p className="text-xs font-semibold text-[#828282] uppercase mb-3">Resumen</p>
                                 <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between text-[#828282]">
-                                        <span>Subtotal</span>
-                                        <span className="tabular-nums">{formatCOP(pedido.subtotal || 0)}</span>
-                                    </div>
+                                    <div className="flex justify-between text-[#828282]"><span>Subtotal</span><span>{formatCOP(pedido.subtotal || 0)}</span></div>
                                     {pedido.descuento_porcentaje > 0 && (
-                                        <div className="flex justify-between text-green-600">
-                                            <span>Descuento ({pedido.descuento_porcentaje}%)</span>
-                                            <span className="tabular-nums">- {formatCOP(pedido.descuento_valor || 0)}</span>
-                                        </div>
+                                        <div className="flex justify-between text-green-600"><span>Descuento ({pedido.descuento_porcentaje}%)</span><span>- {formatCOP(pedido.descuento_valor || 0)}</span></div>
                                     )}
                                     <div className="flex justify-between items-baseline pt-3 border-t border-gray-100 mt-2">
                                         <span className="font-semibold text-[#232323] text-base">Total</span>
-                                        <span className="text-xl font-bold text-[#1A0087] tabular-nums">
-                                            {formatCOP(pedido.total || 0)}
-                                        </span>
+                                        <span className="text-xl font-bold text-[#1A0087]">{formatCOP(pedido.total || 0)}</span>
                                     </div>
                                 </div>
                             </div>
 
                             {pedido.observacion && (
                                 <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                                    <p className="text-xs font-semibold text-[#828282] uppercase tracking-wide mb-2">
-                                        Observación
-                                    </p>
-                                    <p className="text-sm text-[#232323] italic">
-                                        "{pedido.observacion}"
-                                    </p>
+                                    <p className="text-xs font-semibold text-[#828282] uppercase mb-2">Observación</p>
+                                    <p className="text-sm text-[#232323] italic">"{pedido.observacion}"</p>
                                 </div>
                             )}
                         </div>
@@ -957,77 +919,17 @@ export function PedidoDetalleModal({
                             <div className="bg-white rounded-2xl border border-gray-100 p-5">
                                 <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
                                     <div>
-                                        <p className="text-xs font-semibold text-[#828282] uppercase tracking-wide">
-                                            {pedido.numero_cotizacion ? 'Cotización' : 'Borrador de cotización'}
-                                        </p>
-                                        <p className="font-mono text-[#1A0087] font-semibold mt-1 text-base">
-                                            {pedido.numero_cotizacion || `Borrador #${String(pedido.id).slice(0, 8)}`}
-                                        </p>
+                                        <p className="text-xs font-semibold text-[#828282] uppercase">{pedido.numero_cotizacion ? 'Cotización' : 'Borrador'}</p>
+                                        <p className="font-mono text-[#1A0087] font-semibold mt-1 text-base">{pedido.numero_cotizacion || `#${String(pedido.id).slice(0, 8)}`}</p>
                                     </div>
-                                    <CotizacionBadge
-                                        estado={getEstadoCotizacion(pedido.estado)}
-                                        numeroCotizacion={pedido.numero_cotizacion}
-                                    />
+                                    <CotizacionBadge estado={getEstadoCotizacion(pedido.estado)} numeroCotizacion={pedido.numero_cotizacion} />
                                 </div>
-
-                                {!pedido.numero_cotizacion && (
-                                    <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4 flex items-start gap-2">
-                                        <span className="text-yellow-600 text-sm shrink-0">⚠️</span>
-                                        <div>
-                                            <p className="text-xs font-semibold text-yellow-800">
-                                                Cotización borrador
-                                            </p>
-                                            <p className="text-[11px] text-yellow-700 mt-0.5">
-                                                Esta cotización aún no es oficial. Se generará el número COT cuando cartera la apruebe.
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="bg-gray-50 rounded-xl p-4 mb-4 space-y-1.5 text-sm">
-                                    <div className="flex justify-between text-[#828282]">
-                                        <span>Cliente</span>
-                                        <span className="font-medium text-[#232323] truncate max-w-[60%] text-right">
-                                            {pedido.clientes?.nombre || 'N/A'}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-[#828282]">
-                                        <span>Productos</span>
-                                        <span className="font-medium text-[#232323]">
-                                            {pedido.detalle_pedido.length}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between text-[#828282]">
-                                        <span>Subtotal</span>
-                                        <span className="font-medium text-[#232323] tabular-nums">
-                                            {formatCOP(pedido.subtotal || 0)}
-                                        </span>
-                                    </div>
-                                    {pedido.descuento_porcentaje > 0 && (
-                                        <div className="flex justify-between text-green-600">
-                                            <span>Descuento ({pedido.descuento_porcentaje}%)</span>
-                                            <span className="tabular-nums">- {formatCOP(pedido.descuento_valor || 0)}</span>
-                                        </div>
-                                    )}
-                                    <div className="flex justify-between items-baseline pt-2 border-t border-gray-200 mt-2">
-                                        <span className="font-semibold text-[#232323]">Total</span>
-                                        <span className="text-lg font-bold text-[#1A0087] tabular-nums">
-                                            {formatCOP(pedido.total || 0)}
-                                        </span>
-                                    </div>
-                                </div>
-
                                 <div className="space-y-2">
                                     {onVerCotizacion && (
-                                        <button
-                                            onClick={() => onVerCotizacion(pedido.id)}
-                                            className="w-full min-h-[52px] py-3.5 bg-[#1A0087] text-white rounded-xl text-sm font-semibold hover:bg-[#130066] active:scale-[0.98] flex items-center justify-center gap-2 transition-all"
-                                        >
-                                            <DocumentTextIcon className="w-5 h-5" />
-                                            {pedido.numero_cotizacion ? 'Ver cotización completa' : 'Ver borrador'}
+                                        <button onClick={() => onVerCotizacion(pedido.id)} className="w-full min-h-[52px] py-3.5 bg-[#1A0087] text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
+                                            <DocumentTextIcon className="w-5 h-5" />Ver cotización completa
                                         </button>
                                     )}
-
                                     <BotonDescargarPDF pedidoId={pedido.id} />
                                 </div>
                             </div>
@@ -1037,67 +939,61 @@ export function PedidoDetalleModal({
                 </div>
 
                 {/* FOOTER */}
-                <div className="shrink-0 border-t border-gray-100 bg-white p-4">
+                <div className="shrink-0 border-t border-gray-100 bg-white p-4 space-y-2 max-h-[40vh] overflow-y-auto">
                     {modoEdicion ? (
                         <div className="flex flex-col-reverse sm:flex-row gap-2">
-                            <button
-                                onClick={cancelarEdicion}
-                                disabled={procesando}
-                                className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 disabled:opacity-50 min-h-[48px]"
-                            >
-                                Cancelar
-                            </button>
+                            <button onClick={cancelarEdicion} disabled={procesando} className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium min-h-[48px]">Cancelar</button>
                             <div className="hidden sm:block flex-1" />
-                            <button
-                                onClick={guardarEdicion}
-                                disabled={procesando || itemsEdit.length === 0}
-                                className="w-full sm:w-auto px-5 py-3 bg-[#1A0087] text-white rounded-xl text-sm font-semibold hover:bg-[#130066] disabled:opacity-50 min-h-[48px] flex items-center justify-center gap-2 transition-all"
-                            >
-                                {procesando ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        Guardando...
-                                    </>
-                                ) : (
-                                    <>
-                                        <CheckIcon className="w-5 h-5" />
-                                        Guardar cambios
-                                    </>
-                                )}
+                            <button onClick={guardarEdicion} disabled={procesando || itemsEdit.length === 0} className="w-full sm:w-auto px-5 py-3 bg-[#1A0087] text-white rounded-xl text-sm font-semibold min-h-[48px]">
+                                {procesando ? 'Guardando...' : 'Guardar cambios'}
                             </button>
                         </div>
                     ) : (
                         <>
-                            {puedeEditar && (
-                                <button
-                                    onClick={iniciarEdicion}
-                                    className="w-full mb-2 min-h-[48px] px-4 py-3 border border-[#1A0087] rounded-xl text-[#1A0087] bg-white hover:bg-[#1A0087]/5 active:scale-[0.98] font-semibold text-sm flex items-center justify-center gap-2 transition-all"
-                                >
-                                    <PencilIcon className="w-4 h-4" />
-                                    Editar pedido
+                            {pedido.estado === 'aprobado_cartera' && esBodeguero && (
+                                <button onClick={handleAceptar} disabled={procesando} className="w-full min-h-[48px] px-4 py-3 bg-green-600 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                                    {procesando ? 'Procesando...' : <><CheckIcon className="w-5 h-5" />Aceptar y empezar a alistar</>}
                                 </button>
                             )}
-                            {esDevuelto && esAdmin && !modoEdicion && (
-                                <button
-                                    onClick={handleDevolverABodega}
-                                    disabled={procesando}
-                                    className="w-full mb-2 min-h-[48px] px-4 py-3 bg-orange-600 text-white rounded-xl hover:bg-orange-700 active:scale-[0.98] font-semibold text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-                                >
-                                    <ArrowUturnLeftIcon className="w-4 h-4" />
-                                    Devolver a bodega sin cambios
+                            {pedido.estado === 'en_preparacion' && esBodeguero && (
+                                <button onClick={handleMarcarListo} disabled={procesando} className="w-full min-h-[48px] px-4 py-3 bg-emerald-600 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                                    {procesando ? 'Procesando...' : <><ArrowRightIcon className="w-5 h-5" />Marcar como listo para despacho</>}
                                 </button>
                             )}
+                            {pedido.estado === 'listo_para_despacho' && esBodeguero && (
+                                <button onClick={handleDespachar} disabled={procesando} className="w-full min-h-[48px] px-4 py-3 bg-blue-600 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                                    {procesando ? 'Despachando...' : <><TruckIcon className="w-5 h-5" />Despachar</>}
+                                </button>
+                            )}
+                            {pedido.estado === 'despachado' && (
+                                <button onClick={handleMarcarEntregado} disabled={procesando} className="w-full min-h-[48px] px-4 py-3 bg-gray-700 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                                    {procesando ? 'Procesando...' : <><ArchiveBoxIcon className="w-5 h-5" />Marcar como entregado</>}
+                                </button>
+                            )}
+
+                            {esAdmin && !esCancelado && (
+                                <div className="grid grid-cols-2 gap-2">
+                                    {puedeEditar && (
+                                        <button onClick={iniciarEdicion} className="min-h-[44px] px-4 py-2.5 border border-[#1A0087] rounded-xl text-[#1A0087] bg-white hover:bg-[#1A0087]/5 font-semibold text-sm flex items-center justify-center gap-2">
+                                            <PencilIcon className="w-4 h-4" />Editar
+                                        </button>
+                                    )}
+                                    {esRechazable && (
+                                        <button onClick={() => { setMotivoRechazar(''); setConfirmadoRechazar(false); setErrorRechazar(''); setMostrarRechazar(true) }} className="min-h-[44px] px-4 py-2.5 border border-red-300 rounded-xl text-red-600 bg-white hover:bg-red-50 font-semibold text-sm flex items-center justify-center gap-2">
+                                            <XCircleIcon className="w-4 h-4" />Rechazar
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {esDevuelto && esAdmin && (
+                                <button onClick={handleDevolverABodega} disabled={procesando} className="w-full min-h-[48px] px-4 py-3 bg-orange-600 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                                    <ArrowUturnLeftIcon className="w-4 h-4" />Devolver a bodega sin cambios
+                                </button>
+                            )}
+
                             {esAdmin && esCancelable && !esCancelado && !esRechazado && (
-                                <button
-                                    onClick={() => {
-                                        setMotivoCancelar('')
-                                        setConfirmadoCancelar(false)
-                                        setErrorCancelar('')
-                                        setMostrarCancelar(true)
-                                    }}
-                                    disabled={procesando}
-                                    className="w-full min-h-[44px] px-4 py-2.5 border border-red-200 rounded-xl text-red-600 bg-white hover:bg-red-50 active:scale-[0.98] font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all"
-                                >
+                                <button onClick={() => { setMotivoCancelar(''); setConfirmadoCancelar(false); setErrorCancelar(''); setMostrarCancelar(true) }} disabled={procesando} className="w-full min-h-[44px] px-4 py-2.5 border border-red-200 rounded-xl text-red-600 bg-white hover:bg-red-50 font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50">
                                     🗑️ Cancelar pedido definitivamente
                                 </button>
                             )}
@@ -1110,90 +1006,138 @@ export function PedidoDetalleModal({
                     <div className="absolute inset-0 bg-black/40 flex items-end sm:items-center justify-center z-10 p-0 sm:p-4">
                         <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
                             <div className="p-5 border-b border-gray-100">
+                                <h3 className="text-base font-bold text-[#232323]">Cancelar pedido</h3>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Motivo <span className="text-red-500">*</span></label>
+                                    <textarea value={motivoCancelar} onChange={e => setMotivoCancelar(e.target.value)} rows={3} disabled={procesando} className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm resize-none" />
+                                    <p className="text-[10px] text-[#828282] mt-1">{motivoCancelar.trim().length} / 10 mínimo</p>
+                                </div>
+                                <label className="flex items-start gap-3 cursor-pointer">
+                                    <input type="checkbox" checked={confirmadoCancelar} onChange={e => setConfirmadoCancelar(e.target.checked)} disabled={procesando} className="mt-0.5 w-5 h-5 text-red-600 rounded" />
+                                    <span className="text-sm">Entiendo que este pedido será cancelado.</span>
+                                </label>
+                                {errorCancelar && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{errorCancelar}</div>}
+                            </div>
+                            <div className="border-t p-4 flex gap-2">
+                                <button onClick={() => setMostrarCancelar(false)} disabled={procesando} className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium">Volver</button>
+                                <button onClick={handleCancelar} disabled={procesando || motivoCancelar.trim().length < 10 || !confirmadoCancelar} className="flex-1 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold disabled:opacity-40">Confirmar</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL RECHAZAR */}
+                {mostrarRechazar && (
+                    <div className="absolute inset-0 bg-black/40 flex items-end sm:items-center justify-center z-10 p-0 sm:p-4">
+                        <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
+                            <div className="p-5 border-b border-gray-100">
+                                <h3 className="text-base font-bold text-[#232323]">Rechazar pedido</h3>
+                                <p className="text-xs text-[#828282] mt-0.5">El pedido quedará en rechazado_bodega.</p>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">Motivo <span className="text-red-500">*</span></label>
+                                    <textarea value={motivoRechazar} onChange={e => setMotivoRechazar(e.target.value)} rows={3} disabled={procesando} className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm resize-none" />
+                                    <p className="text-[10px] text-[#828282] mt-1">{motivoRechazar.trim().length} / 10 mínimo</p>
+                                </div>
+                                <label className="flex items-start gap-3 cursor-pointer">
+                                    <input type="checkbox" checked={confirmadoRechazar} onChange={e => setConfirmadoRechazar(e.target.checked)} disabled={procesando} className="mt-0.5 w-5 h-5 text-red-600 rounded" />
+                                    <span className="text-sm">Entiendo que este pedido será rechazado.</span>
+                                </label>
+                                {errorRechazar && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{errorRechazar}</div>}
+                            </div>
+                            <div className="border-t p-4 flex gap-2">
+                                <button onClick={() => setMostrarRechazar(false)} disabled={procesando} className="flex-1 py-3 border border-gray-200 rounded-xl text-sm font-medium">Volver</button>
+                                <button onClick={confirmarRechazo} disabled={procesando || motivoRechazar.trim().length < 10 || !confirmadoRechazar} className="flex-1 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold disabled:opacity-40">Confirmar rechazo</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* MODAL RETROCEDER */}
+                {mostrarRetroceder && retrocesoDestino && (
+                    <div className="absolute inset-0 bg-black/50 flex items-end sm:items-center justify-center z-20 p-0 sm:p-4">
+                        <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+                            <div className="p-5 border-b border-orange-100 bg-orange-50">
                                 <div className="flex items-start gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-                                        <span className="text-lg">🗑️</span>
+                                    <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+                                        <ArrowPathIcon className="w-5 h-5 text-orange-600" />
                                     </div>
-                                    <div className="flex-1">
-                                        <h3 className="text-base font-bold text-[#232323]">
-                                            Cancelar pedido
-                                        </h3>
-                                        <p className="text-xs text-[#828282] mt-0.5">
-                                            Esta acción no se puede deshacer fácilmente
-                                        </p>
+                                    <div>
+                                        <h3 className="text-base font-bold text-orange-900">⚠️ Retroceder pedido</h3>
+                                        <p className="text-xs text-orange-700 mt-0.5">Esto revertirá el flujo del pedido y quedará registrado.</p>
                                     </div>
                                 </div>
                             </div>
 
                             <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-xs text-red-800">
-                                    <p className="font-semibold mb-2">⚠️ ¿Qué va a pasar?</p>
-                                    <ul className="list-disc list-inside space-y-1">
-                                        <li>El pedido quedará en estado <strong>cancelado</strong></li>
-                                        <li>Ya no aparecerá en "En proceso"</li>
-                                        <li>Se moverá al historial con badge CANCELADO</li>
-                                        <li><strong>No se devuelve stock</strong> al inventario</li>
-                                    </ul>
+                                <div className="bg-gray-50 rounded-xl p-4 text-sm space-y-1">
+                                    <div className="flex justify-between">
+                                        <span className="text-[#828282]">Estado actual:</span>
+                                        <span className="font-semibold text-[#232323]">{pedido.estado}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-[#828282]">Nuevo estado:</span>
+                                        <span className="font-semibold text-orange-700">{retrocesoDestino.key}</span>
+                                    </div>
+                                    <p className="text-[11px] text-[#828282] pt-2 border-t border-gray-200 mt-2">
+                                        Volverá al paso "{retrocesoDestino.label}" de la barra de progreso.
+                                    </p>
                                 </div>
 
                                 <div>
                                     <label className="block text-sm font-medium text-[#232323] mb-2">
-                                        Motivo de la cancelación <span className="text-red-500">*</span>
+                                        Motivo del retroceso <span className="text-red-500">*</span>
                                     </label>
                                     <textarea
-                                        value={motivoCancelar}
-                                        onChange={(e) => setMotivoCancelar(e.target.value)}
-                                        placeholder="Ej: Cliente canceló el pedido, error en la creación, etc."
+                                        value={motivoRetroceso}
+                                        onChange={e => { setMotivoRetroceso(e.target.value); setErrorRetroceso('') }}
+                                        placeholder="Explica por qué se retrocede el pedido (mín. 10 caracteres)"
                                         rows={3}
                                         disabled={procesando}
-                                        className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500 resize-none"
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/30 focus:border-orange-500 resize-none"
                                     />
-                                    <p className="text-[10px] text-[#828282] mt-1">
-                                        {motivoCancelar.trim().length} / 10 caracteres mínimo
-                                    </p>
+                                    <p className="text-[10px] text-[#828282] mt-1">{motivoRetroceso.trim().length} / 10 mínimo</p>
                                 </div>
 
-                                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl hover:bg-gray-50">
+                                <label className="flex items-start gap-3 cursor-pointer p-3 rounded-xl hover:bg-orange-50">
                                     <input
                                         type="checkbox"
-                                        checked={confirmadoCancelar}
-                                        onChange={(e) => setConfirmadoCancelar(e.target.checked)}
+                                        checked={confirmadoRetroceso}
+                                        onChange={e => setConfirmadoRetroceso(e.target.checked)}
                                         disabled={procesando}
-                                        className="mt-0.5 w-5 h-5 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                                        className="mt-0.5 w-5 h-5 text-orange-600 rounded"
                                     />
                                     <span className="text-sm text-[#232323]">
-                                        Entiendo que este pedido será cancelado definitivamente.
+                                        Entiendo que este retroceso cambiará el estado del pedido y quedará registrado en el historial.
                                     </span>
                                 </label>
 
-                                {errorCancelar && (
-                                    <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">
-                                        {errorCancelar}
-                                    </div>
-                                )}
+                                {errorRetroceso && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{errorRetroceso}</div>}
                             </div>
 
-                            <div className="border-t border-gray-100 p-4 flex flex-col-reverse sm:flex-row gap-2">
-                                <button
-                                    onClick={() => setMostrarCancelar(false)}
-                                    disabled={procesando}
-                                    className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 disabled:opacity-50 min-h-[48px]"
-                                >
-                                    Volver
+                            <div className="border-t p-4 flex flex-col-reverse sm:flex-row gap-2">
+                                <button onClick={() => { setMostrarRetroceder(false); setRetrocesoDestino(null) }} disabled={procesando} className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium min-h-[48px]">
+                                    Cancelar
                                 </button>
                                 <div className="hidden sm:block flex-1" />
                                 <button
-                                    onClick={handleCancelar}
-                                    disabled={procesando || motivoCancelar.trim().length < 10 || !confirmadoCancelar}
-                                    className="w-full sm:w-auto px-5 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[48px] transition-all"
+                                    onClick={confirmarRetroceso}
+                                    disabled={procesando || motivoRetroceso.trim().length < 10 || !confirmadoRetroceso}
+                                    className="w-full sm:w-auto px-5 py-3 bg-orange-600 text-white rounded-xl text-sm font-semibold hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[48px]"
                                 >
                                     {procesando ? (
                                         <>
                                             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                            Cancelando...
+                                            Retrocediendo...
                                         </>
                                     ) : (
-                                        'Confirmar cancelación'
+                                        <>
+                                            <ArrowPathIcon className="w-5 h-5" />
+                                            Confirmar retroceso
+                                        </>
                                     )}
                                 </button>
                             </div>
@@ -1201,7 +1145,6 @@ export function PedidoDetalleModal({
                     </div>
                 )}
 
-                {/* BUSCADOR DE PRODUCTO */}
                 <ProductoBuscadorModal
                     abierto={buscadorAbierto}
                     onClose={() => setBuscadorAbierto(false)}
@@ -1227,70 +1170,35 @@ function BotonDescargarPDF({ pedidoId }: { pedidoId: string }) {
         if (descargando) return
         setDescargando(true)
         setError('')
-
         try {
             const res = await fetch('/api/cotizacion/preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pedidoId }),
             })
-
             const data = await res.json()
-
-            if (!res.ok) {
-                setError(data.error || 'Error al generar el PDF')
-                setDescargando(false)
-                return
-            }
-
+            if (!res.ok) { setError(data.error || 'Error'); setDescargando(false); return }
             if (data.pdfBase64) {
                 const byteCharacters = atob(data.pdfBase64)
                 const byteArray = new Uint8Array(byteCharacters.length)
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteArray[i] = byteCharacters.charCodeAt(i)
-                }
+                for (let i = 0; i < byteCharacters.length; i++) byteArray[i] = byteCharacters.charCodeAt(i)
                 const blob = new Blob([byteArray], { type: 'application/pdf' })
                 const url = window.URL.createObjectURL(blob)
                 const a = document.createElement('a')
                 a.href = url
                 a.download = data.nombreArchivo || 'cotizacion.pdf'
-                document.body.appendChild(a)
-                a.click()
-                a.remove()
+                document.body.appendChild(a); a.click(); a.remove()
                 window.URL.revokeObjectURL(url)
             }
-        } catch (e: any) {
-            setError(e.message || 'Error inesperado')
-        } finally {
-            setDescargando(false)
-        }
+        } catch (e: any) { setError(e.message || 'Error') } finally { setDescargando(false) }
     }
 
     return (
         <>
-            <button
-                onClick={handleDescargar}
-                disabled={descargando}
-                className="w-full min-h-[48px] py-3 border border-[#1A0087] rounded-xl text-[#1A0087] bg-white hover:bg-[#1A0087]/5 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2 transition-all font-semibold text-sm"
-            >
-                {descargando ? (
-                    <>
-                        <div className="w-4 h-4 border-2 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
-                        Generando PDF...
-                    </>
-                ) : (
-                    <>
-                        <ArrowDownTrayIcon className="w-5 h-5" />
-                        Descargar PDF
-                    </>
-                )}
+            <button onClick={handleDescargar} disabled={descargando} className="w-full min-h-[48px] py-3 border border-[#1A0087] rounded-xl text-[#1A0087] bg-white hover:bg-[#1A0087]/5 disabled:opacity-50 flex items-center justify-center gap-2 font-semibold text-sm">
+                {descargando ? 'Generando...' : <><ArrowDownTrayIcon className="w-5 h-5" />Descargar PDF</>}
             </button>
-
-            {error && (
-                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">
-                    {error}
-                </div>
-            )}
+            {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">{error}</div>}
         </>
     )
 }
@@ -1298,24 +1206,11 @@ function BotonDescargarPDF({ pedidoId }: { pedidoId: string }) {
 // ─────────────────────────────────────────────────────
 // Botón de pestaña
 // ─────────────────────────────────────────────────────
-function TabButton({
-    active,
-    onClick,
-    icon,
-    label,
-}: {
-    active: boolean
-    onClick: () => void
-    icon: React.ReactNode
-    label: string
-}) {
+function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
     return (
         <button
             onClick={onClick}
-            className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 text-sm font-medium transition-colors border-b-2 ${active
-                ? 'text-[#1A0087] border-[#1A0087] bg-[#1A0087]/5'
-                : 'text-[#828282] border-transparent hover:text-[#232323] hover:bg-gray-50'
-                }`}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 text-sm font-medium transition-colors border-b-2 ${active ? 'text-[#1A0087] border-[#1A0087] bg-[#1A0087]/5' : 'text-[#828282] border-transparent hover:text-[#232323] hover:bg-gray-50'}`}
         >
             {icon}
             {label}

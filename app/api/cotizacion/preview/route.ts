@@ -48,8 +48,7 @@ export async function POST(req: NextRequest) {
                 *,
                 clientes(nombre, cc_nit, telefono, email, direccion),
                 bodegas(nombre),
-                detalle_pedido(cantidad_solicitada, cantidad_aprobada, productos(nombre, codigo, precio))
-            `)
+                detalle_pedido(cantidad_solicitada, cantidad_aprobada, precio_unitario, tipo_precio, productos(nombre, codigo, precio))            `)
             .eq('id', pedidoId)
             .single()
 
@@ -60,16 +59,19 @@ export async function POST(req: NextRequest) {
         // 4. Preparar datos
         const estadoCotizacion = getEstadoCotizacion(pedido.estado)
         const marcaAgua = getMarcaAgua(estadoCotizacion)
-
         const items = (pedido.detalle_pedido || []).map((d: any) => {
             const cantidad = d.cantidad_aprobada || d.cantidad_solicitada
-            const precio = d.productos?.precio || 0
+            const precioBase = d.productos?.precio || 0
+            const precio = d.precio_unitario ?? precioBase
+            const subido = d.precio_unitario != null && d.precio_unitario > precioBase
             return {
                 codigo: d.productos?.codigo || null,
                 nombre: d.productos?.nombre || 'Producto',
                 cantidad,
                 precio,
                 total: precio * cantidad,
+                subido,
+                precioBase,
             }
         })
 

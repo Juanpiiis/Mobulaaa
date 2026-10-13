@@ -121,6 +121,8 @@ export default function CarteraPage() {
           cantidad_solicitada,
           cantidad_aprobada,
           producto_id,
+          precio_unitario,
+          tipo_precio,
           productos(id, nombre, precio, codigo)
         )
       `)
@@ -153,7 +155,7 @@ export default function CarteraPage() {
     try {
       // 1. Calcular totales
       const subtotal = pedido.detalle_pedido.reduce(
-        (acc, d) => acc + (d.productos?.precio || 0) * d.cantidad_solicitada,
+        (acc, d: any) => acc + (d.precio_unitario ?? d.productos?.precio ?? 0) * d.cantidad_solicitada,
         0
       )
       const porcentaje = calcularDescuento(subtotal)
@@ -179,6 +181,7 @@ export default function CarteraPage() {
           aprobado_cartera_en: new Date().toISOString(),
         })
         .eq('id', pedido.id)
+        .eq('estado', 'pendiente')
 
       if (errUpdate) {
         alert('Error actualizando pedido: ' + errUpdate.message)
@@ -191,7 +194,7 @@ export default function CarteraPage() {
       await registrarCambioHistorial({
         pedidoId: pedido.id,
         accion: 'aprobado_cartera',
-        estadoAnterior: 'aprobado_bodega',
+        estadoAnterior: 'pendiente',
         estadoNuevo: 'aprobado_cartera',
         observacion: observacionAprobar.trim()
           ? `Aprobado por cartera. Cotización: ${numeroCotizacion}. Obs: ${observacionAprobar.trim()}`
@@ -284,8 +287,9 @@ export default function CarteraPage() {
     // 1. Devolver el pedido a 'devuelto_por_cartera'
     const { error: errUpdate } = await supabase
       .from('pedidos')
-      .update({ estado: 'devuelto_por_cartera' })
+      .update({ estado: 'rechazado_cartera' })
       .eq('id', pedido.id)
+      .eq('estado', 'pendiente')
 
     if (errUpdate) {
       setErrorRechazar('Error actualizando pedido: ' + errUpdate.message)
@@ -297,10 +301,10 @@ export default function CarteraPage() {
     const { registrarCambioHistorial } = await import('@/lib/utils/historial')
     await registrarCambioHistorial({
       pedidoId: pedido.id,
-      accion: 'devuelto_por_cartera',
-      estadoAnterior: 'aprobado_bodega',
-      estadoNuevo: 'devuelto_por_cartera',
-      observacion: `Devuelto por cartera. Motivo: ${motivoRechazar.trim()}`,
+      accion: 'rechazado_cartera',
+      estadoAnterior: 'pendiente',
+      estadoNuevo: 'rechazado_cartera',
+      observacion: `Rechazado por cartera. Motivo: ${motivoRechazar.trim()}`,
       cambios: {
         motivo: motivoRechazar.trim(),
       },
@@ -311,14 +315,14 @@ export default function CarteraPage() {
     setProcesando(null)
     fetchOrders()
 
-    alert('Pedido devuelto a bodega. El admin decidirá si devolverlo al vendedor o cancelarlo.')
+    alert('Pedido rechazado con exito')
   }
 
   // ─────────────────────────────────────────────────────
   // Separación
   // ─────────────────────────────────────────────────────
   const porAprobar = useMemo(() => {
-    const arr = pedidos.filter(p => p.estado === 'aprobado_bodega')
+    const arr = pedidos.filter(p => p.estado === 'pendiente')
     // Ordenar: importantes primero, luego fecha ascendente
     return [...arr].sort((a, b) => {
       if (a.importante && !b.importante) return -1
@@ -337,7 +341,7 @@ export default function CarteraPage() {
     const q = filtros.busqueda.trim().toLowerCase()
     return pedidos.filter(p => {
       // Historial: todo menos lo que está por aprobar
-      if (p.estado === 'aprobado_bodega') return false
+      if (p.estado === 'pendiente') return false
 
       // Filtro estado
       if (filtros.estado === 'pendiente' && p.estado !== 'pendiente') return false
@@ -408,7 +412,7 @@ export default function CarteraPage() {
   // Acciones de la tarjeta
   // ─────────────────────────────────────────────────────
   const renderAcciones = (pedido: Pedido) => {
-    if (pedido.estado !== 'aprobado_bodega') return undefined
+    if (pedido.estado !== 'pendiente') return undefined
 
     const cargando = procesando === pedido.id
     const btns: React.ReactNode[] = []
@@ -661,7 +665,7 @@ export default function CarteraPage() {
                   <span>Subtotal</span>
                   <span className="font-medium text-[#232323] tabular-nums">
                     {formatCOP(pedidoAprobando.detalle_pedido.reduce(
-                      (acc, d) => acc + (d.productos?.precio || 0) * d.cantidad_solicitada, 0
+                      (acc, d: any) => acc + (d.precio_unitario ?? d.productos?.precio ?? 0) * d.cantidad_solicitada, 0
                     ))}
                   </span>
                 </div>
@@ -733,7 +737,7 @@ export default function CarteraPage() {
                 <div>
                   <h3 className="text-base font-bold text-[#232323]">Rechazar pedido</h3>
                   <p className="text-xs text-[#828282] mt-0.5">
-                    El pedido volverá a bodega para ser revisado
+                    El pedido será rechazado y no continuará el flujo
                   </p>
                 </div>
               </div>
@@ -741,11 +745,11 @@ export default function CarteraPage() {
 
             {/* BODY */}
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-xs text-orange-800">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-xs text-red-800">
                 <p className="font-semibold mb-2">⚠️ ¿Qué va a pasar?</p>
                 <ul className="list-disc list-inside space-y-1">
-                  <li>El pedido vuelve a <strong>bodega</strong> (queda para revisión del admin)</li>
-                  <li>El <strong>admin</strong> decide si devolverlo al vendedor o cancelarlo</li>
+                  <li>El pedido queda en estado <strong>rechazado por cartera</strong></li>
+                  <li>Ya no continúa al siguiente paso del flujo</li>
                   <li>Se registra el motivo en el historial</li>
                 </ul>
               </div>
@@ -800,7 +804,7 @@ export default function CarteraPage() {
                 ) : (
                   <>
                     <XCircleIcon className="w-5 h-5" />
-                    Rechazar y devolver
+                    Rechazar pedido
                   </>
                 )}
               </button>

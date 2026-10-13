@@ -34,14 +34,6 @@ export default function BodegueroPage() {
           <p className="text-yellow-700 font-bold text-3xl">{pendientes}</p>
           <p className="text-yellow-600">Pedidos pendientes</p>
         </Link>
-        <Link href="/bodeguero/inventario" className="bg-red-50 border border-red-200 rounded-lg p-4 hover:shadow">
-          <p className="text-red-700 font-bold text-3xl">{stockBajo}</p>
-          <p className="text-red-600">Productos stock bajo</p>
-        </Link>
-        <Link href="/bodeguero/inventario" className="bg-blue-50 border border-blue-200 rounded-lg p-4 hover:shadow">
-          <p className="text-blue-700 font-bold text-3xl">{totalProductos}</p>
-          <p className="text-blue-600">Total productos</p>
-        </Link>
       </div>
     </div>
   )

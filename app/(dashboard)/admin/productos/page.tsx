@@ -13,21 +13,6 @@ import {
   LockClosedIcon,
 } from '@heroicons/react/24/outline'
 
-const CATEGORIAS = [
-  'AUDIFONO',
-  'CARGADOR',
-  'CABLES',
-  'RELOJ',
-  'PARLANTES',
-  'DIADEMAS',
-  'POWER BANK',
-  'CELULAR',
-  'TABLET',
-  'COMPUTADOR',
-  'VENTILADOR',
-  'OTROS',
-]
-
 interface Producto {
   id: string
   nombre: string
@@ -41,6 +26,8 @@ interface Producto {
   precio_mayorista: number | null
   precio_tat: number | null
   activo: boolean
+  congelado_manual: boolean | null
+  limite_congelado: number | null
 }
 
 interface CongeladoInfo {
@@ -55,10 +42,13 @@ interface Bodega {
   nombre: string
 }
 
+interface Categoria {
+  id: string
+  nombre: string
+}
+
 const LIMITE_DEFAULT = 150
 
-// Helper: ¿está congelado?
-// Lee el congelado desde `inventario` de la bodega actual.
 function esProductoCongelado(info: CongeladoInfo | undefined): boolean {
   if (!info) return false
   if (info.congelado_manual) return true
@@ -67,7 +57,6 @@ function esProductoCongelado(info: CongeladoInfo | undefined): boolean {
   return info.stock_disponible <= limite
 }
 
-// Helper: normalizar texto (mayúsculas, sin tildes, espacios colapsados)
 function normalizar(s: string | null | undefined): string {
   return (s || '')
     .toUpperCase()
@@ -80,17 +69,16 @@ function normalizar(s: string | null | undefined): string {
 export default function ProductosPage() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [bodegas, setBodegas] = useState<Bodega[]>([])
-  const [congeladoPorProducto, setCongeladoPorProducto] = useState<Map<string, CongeladoInfo>>(new Map())
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [stockPorProducto, setStockPorProducto] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [errorCarga, setErrorCarga] = useState('')
 
-  // Filtros
   const [busqueda, setBusqueda] = useState('')
   const [categoriaFiltro, setCategoriaFiltro] = useState('')
   const [mostrarInactivos, setMostrarInactivos] = useState(false)
   const [mostrarSoloCongelados, setMostrarSoloCongelados] = useState(false)
 
-  // Modal rápido (crear/editar básico)
   const [showModal, setShowModal] = useState(false)
   const [editando, setEditando] = useState<Producto | null>(null)
   const [form, setForm] = useState({
@@ -102,7 +90,6 @@ export default function ProductosPage() {
     cantidad: '0',
   })
 
-  // Modal de eliminar
   const [eliminando, setEliminando] = useState<Producto | null>(null)
 
   const supabase = createClient()
@@ -115,7 +102,7 @@ export default function ProductosPage() {
 
     const { data: p, error: errP } = await supabase
       .from('productos')
-      .select('id, nombre, descripcion, categoria, categoria_excel, codigo, referencia_excel, marca, precio, precio_mayorista, precio_tat, activo')
+      .select('id, nombre, descripcion, categoria, categoria_excel, codigo, referencia_excel, marca, precio, precio_mayorista, precio_tat, activo, congelado_manual, limite_congelado')
       .order('nombre', { ascending: true })
 
     if (errP) {
@@ -135,34 +122,39 @@ export default function ProductosPage() {
       console.error('Error cargando bodegas:', errB)
     }
 
-    setProductos(p || [])
-    setBodegas(b || [])
+    const { data: c, error: errC } = await supabase
+      .from('categorias')
+      .select('id, nombre')
+      .order('nombre')
 
-    // Cargar congelado desde inventario de la bodega actual
+    if (errC) {
+      console.error('Error cargando categorías:', errC)
+      setErrorCarga('No se pudieron cargar las categorías: ' + errC.message)
+    }
+
+    setProductos((p as Producto[]) || [])
+    setBodegas(b || [])
+    setCategorias(c || [])
+
     if (tiendaActual) {
       const { data: inv, error: errInv } = await supabase
         .from('inventario')
-        .select('producto_id, cantidad_disponible, congelado_manual, limite_congelado')
+        .select('producto_id, cantidad_disponible')
         .eq('bodega_id', tiendaActual.id)
 
       if (errInv) {
         console.error('Error cargando inventario:', errInv)
-        setErrorCarga('No se pudo cargar el inventario de la bodega: ' + errInv.message)
-        setCongeladoPorProducto(new Map())
+        setErrorCarga('No se pudo cargar el stock de la bodega: ' + errInv.message)
+        setStockPorProducto(new Map())
       } else {
-        const map = new Map<string, CongeladoInfo>()
+        const map = new Map<string, number>()
         for (const i of inv || []) {
-          map.set(i.producto_id, {
-            congelado_manual: i.congelado_manual ?? false,
-            limite_congelado: i.limite_congelado ?? null,
-            stock_disponible: i.cantidad_disponible ?? 0,
-            bodega_id: tiendaActual.id,
-          })
+          map.set(i.producto_id, i.cantidad_disponible ?? 0)
         }
-        setCongeladoPorProducto(map)
+        setStockPorProducto(map)
       }
     } else {
-      setCongeladoPorProducto(new Map())
+      setStockPorProducto(new Map())
     }
 
     setLoading(false)
@@ -173,9 +165,16 @@ export default function ProductosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tiendaActual?.id])
 
-  // ─────────────────────────────────────────────
-  // Guardar (modal rápido)
-  // ─────────────────────────────────────────────
+  const getCongeladoInfo = (p: Producto): CongeladoInfo | undefined => {
+    if (!tiendaActual) return undefined
+    return {
+      congelado_manual: p.congelado_manual ?? false,
+      limite_congelado: p.limite_congelado ?? null,
+      stock_disponible: stockPorProducto.get(p.id) ?? 0,
+      bodega_id: tiendaActual.id,
+    }
+  }
+
   const handleGuardar = async () => {
     const nombreCompleto = form.color
       ? `${form.nombre} ${form.color}`.toUpperCase()
@@ -217,15 +216,19 @@ export default function ProductosPage() {
       }
 
       if (form.bodega_id) {
-        const { error: errInv } = await supabase.from('inventario').insert({
-          producto_id: producto.id,
-          bodega_id: form.bodega_id,
-          cantidad_disponible: parseInt(form.cantidad) || 0,
-          cantidad_minima: 0,
-        })
-        if (errInv) {
-          console.error('Error creando inventario inicial:', errInv)
-          setErrorCarga('Producto creado, pero falló el inventario inicial: ' + errInv.message)
+        const cantidad = parseInt(form.cantidad) || 0
+        if (cantidad > 0) {
+          const { error: errInv } = await supabase.rpc('ajustar_stock', {
+            p_producto: producto.id,
+            p_bodega: form.bodega_id,
+            p_delta: cantidad,
+            p_tipo: 'entrada',
+            p_obs: 'Carga inicial al crear producto',
+          })
+          if (errInv) {
+            console.error('Error creando inventario inicial:', errInv)
+            setErrorCarga('Producto creado, pero falló el inventario inicial: ' + errInv.message)
+          }
         }
       }
     }
@@ -291,25 +294,10 @@ export default function ProductosPage() {
     cargarDatos()
   }
 
-  // ─────────────────────────────────────────────
-  // Filtrado UNIFICADO
-  // ─────────────────────────────────────────────
-
-  const categoriasDisponibles = useMemo(() => {
-    const set = new Set<string>()
-    productos.forEach((p) => {
-      const ce = normalizar(p.categoria_excel)
-      if (ce) set.add(ce)
-      const c = normalizar(p.categoria)
-      if (c) set.add(c)
-    })
-    return Array.from(set).sort((a, b) => a.localeCompare(b))
-  }, [productos])
-
   const filtrados = productos.filter((p) => {
     if (!mostrarInactivos && !p.activo) return false
 
-    const congelado = esProductoCongelado(congeladoPorProducto.get(p.id))
+    const congelado = esProductoCongelado(getCongeladoInfo(p))
     if (mostrarSoloCongelados && !congelado) return false
 
     if (categoriaFiltro) {
@@ -376,7 +364,6 @@ export default function ProductosPage() {
 
       <main className="w-full px-4 sm:px-6 py-6 space-y-4">
 
-        {/* Error */}
         {errorCarga && (
           <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm flex items-start justify-between gap-3">
             <span>❌ {errorCarga}</span>
@@ -386,7 +373,6 @@ export default function ProductosPage() {
           </div>
         )}
 
-        {/* Filtros */}
         <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="relative">
@@ -406,9 +392,9 @@ export default function ProductosPage() {
               className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 bg-white"
             >
               <option value="">Todas las categorías</option>
-              {categoriasDisponibles.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+              {categorias.map((c) => (
+                <option key={c.id} value={c.nombre}>
+                  {c.nombre}
                 </option>
               ))}
             </select>
@@ -453,9 +439,10 @@ export default function ProductosPage() {
         {!loading && filtrados.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {filtrados.map((p) => {
-              const infoCong = congeladoPorProducto.get(p.id)
+              const infoCong = getCongeladoInfo(p)
               const congelado = esProductoCongelado(infoCong)
               const catMostrar = getCategoriaMostrar(p)
+              const stock = infoCong?.stock_disponible
               return (
                 <div
                   key={p.id}
@@ -510,10 +497,10 @@ export default function ProductosPage() {
                         ⚠️ Sin referencia de Excel
                       </p>
                     )}
-                    {infoCong && (
+                    {stock !== undefined && (
                       <p>
                         <span className="font-medium text-[#232323]">Stock:</span>{' '}
-                        {infoCong.stock_disponible}
+                        {stock}
                       </p>
                     )}
                   </div>
@@ -622,9 +609,9 @@ export default function ProductosPage() {
                 onChange={(e) => setForm({ ...form, categoria: e.target.value })}
               >
                 <option value="">Seleccionar categoría</option>
-                {CATEGORIAS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                {categorias.map((c) => (
+                  <option key={c.id} value={c.nombre}>
+                    {c.nombre}
                   </option>
                 ))}
               </select>

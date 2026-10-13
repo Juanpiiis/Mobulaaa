@@ -25,7 +25,7 @@ const navigationConfig = {
     items: [
       { name: 'Dashboard', href: '/admin', icon: HomeIcon },
       { name: 'Productos', href: '/admin/productos', icon: CubeIcon },
-      { name: 'Inventario', href: '/bodeguero/inventario', icon: CubeIcon },
+      { name: 'Inventario', href: '/admin/inventario', icon: CubeIcon },
       { name: 'Bodegas', href: '/admin/bodegas', icon: BuildingStorefrontIcon },
       { name: 'Usuarios', href: '/admin/usuarios', icon: UsersIcon },
       { name: 'Reportes', href: '/admin/reportes', icon: DocumentTextIcon },
@@ -33,27 +33,24 @@ const navigationConfig = {
       { name: 'Subir Inventario', href: '/admin/subir-inventario', icon: ClipboardIcon },
       { name: 'Cortes', href: '/admin/cortes', icon: ClipboardDocumentListIcon },
       { name: 'Pedidos de Vendedor', href: '/vendedor/mis-pedidos', icon: ClipboardDocumentListIcon },
-      { name: 'Pedidos de Bodega', href: '/bodeguero/pedidos', icon: ClipboardDocumentListIcon },
+      { name: 'Pedidos', href: '/admin/pedidos', icon: ClipboardDocumentListIcon },
       { name: 'Pedidos de Cartera', href: '/cartera', icon: ClipboardDocumentListIcon },
-      { name: 'Movimientos de bodega', href: '/bodeguero/movimientos', icon: ArrowsRightLeftIcon },
-      { name: 'Entrada Mercancía', href: '/bodeguero/entradas', icon: ClipboardIcon },
+      { name: 'Movimientos de bodega', href: '/admin/movimientos', icon: ArrowsRightLeftIcon },
+      { name: 'Entrada Mercancía', href: '/admin/entradas', icon: ClipboardIcon },
     ]
   },
   bodeguero: {
     title: 'Panel de Bodeguero',
     items: [
       { name: 'Inicio', href: '/bodeguero', icon: HomeIcon },
-      { name: 'Inventario', href: '/bodeguero/inventario', icon: CubeIcon },
-      { name: 'Movimientos', href: '/bodeguero/movimientos', icon: ArrowsRightLeftIcon },
       { name: 'Pedidos', href: '/bodeguero/pedidos', icon: ClipboardDocumentListIcon },
-      { name: 'Entrada Mercancía', href: '/bodeguero/entradas', icon: ClipboardIcon },
     ]
   },
   cartera: {
     title: 'Panel de Cartera',
     items: [
       { name: 'Inicio', href: '/cartera', icon: HomeIcon },
-      { name: 'Pedidos', href: '/cartera/pedidos', icon: ClipboardDocumentListIcon },
+      { name: 'Pedidos', href: '/cartera', icon: ClipboardDocumentListIcon },
     ]
   },
   vendedor: {

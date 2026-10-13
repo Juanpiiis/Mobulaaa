@@ -51,6 +51,8 @@ interface Pedido {
     producto_id?: string
     cantidad_solicitada: number
     cantidad_aprobada: number | null
+    precio_unitario?: number | null
+    tipo_precio?: string | null
     productos: { id?: string; nombre: string; precio: number; codigo: string | null }
   }[]
 }
@@ -58,6 +60,7 @@ interface Pedido {
 interface ItemPedido {
   producto_id: string
   cantidad: string
+  precio_unitario?: number
 }
 
 const MESES = [
@@ -147,8 +150,13 @@ export default function MisPedidosPage() {
         bodegas ( id, nombre ),
         clientes ( nombre, cc_nit ),
         usuarios ( nombre ),
-        detalle_pedido (
-          id, producto_id, cantidad_solicitada, cantidad_aprobada,
+             detalle_pedido(
+          id,
+          producto_id,
+          cantidad_solicitada,
+          cantidad_aprobada,
+          precio_unitario,
+          tipo_precio,
           productos ( id, nombre, precio, codigo )
         )
       `)
@@ -192,13 +200,14 @@ export default function MisPedidosPage() {
   }, [tiendaActual])
 
   // ─────────────────────────────────────────────
-  // Preview del pedido
+  // Preview del pedido (usa precio_unitario)
   // ─────────────────────────────────────────────
   const preview = useMemo(() => {
     const subtotal = items.reduce((acc, item) => {
       const prod = productos.find((p) => p.id === item.producto_id)
       if (!prod || !item.cantidad) return acc
-      return acc + prod.precio * parseInt(item.cantidad)
+      const precio = item.precio_unitario ?? prod.precio
+      return acc + precio * parseInt(item.cantidad)
     }, 0)
     const porcentaje = calcularDescuento(subtotal)
     const descuento = subtotal * (porcentaje / 100)
@@ -231,6 +240,10 @@ export default function MisPedidosPage() {
       }
       if (cant > prod.stock_disponible) {
         return `"${prod.nombre}" solo tiene ${prod.stock_disponible} unidades disponibles`
+      }
+      const precio = item.precio_unitario ?? prod.precio
+      if (precio < prod.precio) {
+        return `El precio de "${prod.nombre}" no puede ser menor a ${formatCOP(prod.precio)}`
       }
     }
     return null
@@ -280,11 +293,18 @@ export default function MisPedidosPage() {
       }
 
       const { error: errDetalle } = await supabase.from('detalle_pedido').insert(
-        itemsValidos.map((item) => ({
-          pedido_id: pedido.id,
-          producto_id: item.producto_id,
-          cantidad_solicitada: parseInt(item.cantidad),
-        }))
+        itemsValidos.map((item) => {
+          const prod = productos.find(p => p.id === item.producto_id)
+          const precioBase = prod?.precio ?? 0
+          const precioFinal = item.precio_unitario ?? precioBase
+          return {
+            pedido_id: pedido.id,
+            producto_id: item.producto_id,
+            cantidad_solicitada: parseInt(item.cantidad),
+            precio_unitario: precioFinal,
+            tipo_precio: 'unidad',
+          }
+        })
       )
 
       if (errDetalle) {
@@ -311,12 +331,17 @@ export default function MisPedidosPage() {
   }
 
   const handleAgregarProducto = (p: ProductoBusqueda) => {
-    setItems([...items, { producto_id: p.id, cantidad: '1' }])
+    setItems([...items, { producto_id: p.id, cantidad: '1', precio_unitario: p.precio }])
     setErrorStock(null)
   }
 
   const handleCantidadChange = (index: number, cantidad: string) => {
     setItems(items.map((it, idx) => (idx === index ? { ...it, cantidad } : it)))
+    setErrorStock(null)
+  }
+
+  const handlePrecioChange = (index: number, precio: number) => {
+    setItems(items.map((it, idx) => (idx === index ? { ...it, precio_unitario: precio } : it)))
     setErrorStock(null)
   }
 
@@ -696,7 +721,9 @@ export default function MisPedidosPage() {
                                 index={i}
                                 producto={prod}
                                 cantidad={item.cantidad}
+                                precioUnitario={item.precio_unitario ?? prod.precio}
                                 onCantidadChange={handleCantidadChange}
+                                onPrecioChange={handlePrecioChange}
                                 onEliminar={handleEliminarItem}
                                 formatCOP={formatCOP}
                               />

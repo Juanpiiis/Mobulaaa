@@ -16,6 +16,8 @@ export interface PedidoCompacto {
     detalle_pedido: {
         cantidad_solicitada: number
         cantidad_aprobada?: number | null
+        precio_unitario?: number | null
+        tipo_precio?: string | null
         productos?: {
             nombre: string
             codigo?: string | null
@@ -36,7 +38,9 @@ const ESTADO_LABEL: Record<string, string> = {
     pendiente: 'Pendiente',
     aprobado_bodega: 'Aprobado bodega',
     rechazado_bodega: 'Rechazado',
-    aprobado_cartera: 'Listo para despachar',
+    aprobado_cartera: 'Aprobado cartera',
+    en_preparacion: 'En preparación',
+    listo_para_despacho: 'Listo para despacho',
     rechazado_cartera: 'Rechazado',
     devuelto_por_cartera: 'Devuelto por cartera',
     despachado: 'Despachado',
@@ -48,7 +52,9 @@ const ESTADO_PILL: Record<string, { pill: string; dot: string }> = {
     pendiente: { pill: 'bg-amber-50 text-amber-800 ring-amber-200', dot: 'bg-amber-500' },
     aprobado_bodega: { pill: 'bg-blue-50 text-blue-800 ring-blue-200', dot: 'bg-blue-500' },
     rechazado_bodega: { pill: 'bg-red-50 text-red-700 ring-red-200', dot: 'bg-red-500' },
-    aprobado_cartera: { pill: 'bg-emerald-50 text-emerald-800 ring-emerald-200', dot: 'bg-emerald-500' },
+    aprobado_cartera: { pill: 'bg-blue-50 text-blue-800 ring-blue-200', dot: 'bg-blue-500' },
+    en_preparacion: { pill: 'bg-amber-50 text-amber-800 ring-amber-200', dot: 'bg-amber-500' },
+    listo_para_despacho: { pill: 'bg-emerald-50 text-emerald-800 ring-emerald-200', dot: 'bg-emerald-500' },
     rechazado_cartera: { pill: 'bg-red-50 text-red-700 ring-red-200', dot: 'bg-red-500' },
     devuelto_por_cartera: { pill: 'bg-orange-50 text-orange-800 ring-orange-200', dot: 'bg-orange-500' },
     despachado: { pill: 'bg-violet-50 text-violet-800 ring-violet-200', dot: 'bg-violet-500' },
@@ -60,7 +66,9 @@ const ACENTO: Record<string, string> = {
     pendiente: 'bg-amber-400',
     aprobado_bodega: 'bg-blue-500',
     rechazado_bodega: 'bg-red-500',
-    aprobado_cartera: 'bg-emerald-500',
+    aprobado_cartera: 'bg-blue-500',
+    en_preparacion: 'bg-amber-400',
+    listo_para_despacho: 'bg-emerald-500',
     rechazado_cartera: 'bg-red-500',
     devuelto_por_cartera: 'bg-orange-500',
     despachado: 'bg-violet-500',
@@ -70,18 +78,15 @@ const ACENTO: Record<string, string> = {
 
 const PASOS = [
     { key: 'pendiente', label: 'Pedido' },
-    { key: 'aprobado_bodega', label: 'Bodega' },
     { key: 'aprobado_cartera', label: 'Cartera' },
+    { key: 'en_preparacion', label: 'Preparando' },
+    { key: 'listo_para_despacho', label: 'Listo' },
     { key: 'despachado', label: 'Enviado' },
     { key: 'entregado', label: 'Entregado' },
 ]
 
 const formatCOP = (v: number) =>
-    new Intl.NumberFormat('es-CO', {
-        style: 'currency',
-        currency: 'COP',
-        minimumFractionDigits: 0,
-    }).format(v)
+    new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v)
 
 const formatFecha = (iso: string) =>
     new Date(iso).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -111,11 +116,15 @@ export function PedidoCardCompacta({
 
     const puedeMarcarImportante = esAdmin && !esRechazado && !esDevuelto && pedido.estado !== 'despachado' && pedido.estado !== 'entregado'
 
+    const hayPrecioAjustado = pedido.detalle_pedido.some(d => {
+        const precioBase = d.productos?.precio ?? 0
+        return d.precio_unitario != null && d.precio_unitario > precioBase
+    })
+
     return (
         <article
             onClick={onClick}
-            className={`relative w-full overflow-hidden rounded-xl border bg-white shadow-sm transition-shadow hover:shadow-md cursor-pointer ${pedido.importante ? 'border-amber-200' : esDevuelto ? 'border-orange-200' : 'border-gray-200'
-                }`}
+            className={`relative w-full overflow-hidden rounded-xl border bg-white shadow-sm transition-shadow hover:shadow-md cursor-pointer ${pedido.importante ? 'border-amber-200' : esDevuelto ? 'border-orange-200' : 'border-gray-200'}`}
         >
             <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${acento}`} />
 
@@ -128,14 +137,17 @@ export function PedidoCardCompacta({
                             </h3>
                             {pedido.revertido && (
                                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700 ring-1 ring-inset ring-orange-200">
-                                    <ArrowPathIcon className="h-3 w-3" />
-                                    Revertido
+                                    <ArrowPathIcon className="h-3 w-3" />Revertido
                                 </span>
                             )}
                             {esDevuelto && (
                                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-medium text-orange-700 ring-1 ring-inset ring-orange-200">
-                                    <ArrowUturnLeftIcon className="h-3 w-3" />
-                                    Devuelto
+                                    <ArrowUturnLeftIcon className="h-3 w-3" />Devuelto
+                                </span>
+                            )}
+                            {hayPrecioAjustado && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 ring-1 ring-inset ring-amber-300">
+                                    * Precio ajustado
                                 </span>
                             )}
                         </div>
@@ -150,84 +162,52 @@ export function PedidoCardCompacta({
                         {esAdmin && onToggleImportante && puedeMarcarImportante && (
                             <button
                                 type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation()
-                                    onToggleImportante(pedido.id, !pedido.importante)
-                                }}
-                                className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${pedido.importante
-                                    ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
-                                    : 'bg-gray-100 text-gray-400 hover:bg-amber-50 hover:text-amber-500'
-                                    }`}
-                                aria-label={pedido.importante ? 'Quitar importante' : 'Marcar como importante'}
-                                title={pedido.importante ? 'Quitar importante' : 'Marcar como importante'}
+                                onClick={(e) => { e.stopPropagation(); onToggleImportante(pedido.id, !pedido.importante) }}
+                                className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${pedido.importante ? 'bg-amber-100 text-amber-600 hover:bg-amber-200' : 'bg-gray-100 text-gray-400 hover:bg-amber-50 hover:text-amber-500'}`}
                             >
-                                <StarIcon
-                                    className="w-5 h-5"
-                                    fill={pedido.importante ? 'currentColor' : 'none'}
-                                    stroke="currentColor"
-                                    strokeWidth={2}
-                                />
+                                <StarIcon className="w-5 h-5" fill={pedido.importante ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={2} />
                             </button>
                         )}
-
                         {!esAdmin && pedido.importante && (
-                            <span
-                                className="w-10 h-10 flex items-center justify-center text-amber-500 bg-amber-50 rounded-full"
-                                title="Marcado como importante"
-                            >
+                            <span className="w-10 h-10 flex items-center justify-center text-amber-500 bg-amber-50 rounded-full">
                                 <StarIcon className="w-5 h-5" fill="currentColor" />
                             </span>
                         )}
-
-                        <span
-                            className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${pill.pill}`}
-                        >
+                        <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${pill.pill}`}>
                             <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
                             {ESTADO_LABEL[pedido.estado] || pedido.estado}
                         </span>
                     </div>
                 </header>
 
-                {/* Stepper: solo si NO es rechazado ni devuelto */}
                 {!esRechazado && !esDevuelto && pasoActual >= 0 && (
-                    <ol className="grid grid-cols-5" aria-label="Progreso del pedido">
+                    <div className="grid grid-cols-6 gap-0.5" aria-label="Progreso del pedido">
                         {PASOS.map((paso, i) => {
                             const completado = i < pasoActual
                             const actual = i === pasoActual
                             return (
-                                <li
-                                    key={paso.key}
-                                    className="relative flex min-w-0 flex-col items-center gap-1.5"
-                                    aria-current={actual ? 'step' : undefined}
-                                >
-                                    {i < PASOS.length - 1 && (
-                                        <span
-                                            aria-hidden
-                                            className={`absolute left-1/2 top-[9px] h-0.5 w-full ${completado ? 'bg-[#1A0087]' : 'bg-gray-200'
-                                                }`}
-                                        />
-                                    )}
-                                    <span
-                                        className={`relative z-10 flex h-5 w-5 items-center justify-center rounded-full ${completado
-                                            ? 'bg-[#1A0087] text-white'
-                                            : actual
-                                                ? 'bg-[#1A0087] ring-4 ring-[#1A0087]/15'
-                                                : 'border-2 border-gray-200 bg-white'
-                                            }`}
-                                    >
-                                        {completado && <CheckIcon className="h-3 w-3" />}
-                                        {actual && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                                    </span>
-                                    <span
-                                        className={`w-full truncate text-center text-[11px] leading-tight ${actual ? 'font-semibold text-[#1A0087]' : 'text-[#828282]'
-                                            }`}
-                                    >
+                                <div key={paso.key} className="flex flex-col items-center gap-1.5">
+                                    <div className="relative w-full flex items-center">
+                                        {i > 0 && (
+                                            <div className={`h-0.5 flex-1 rounded ${i <= pasoActual ? 'bg-[#1A0087]' : 'bg-gray-200'}`} />
+                                        )}
+                                        {i === 0 && <div className="h-0.5 flex-1" />}
+                                        <div className={`relative z-10 flex w-5 h-5 items-center justify-center rounded-full shrink-0 ${completado ? 'bg-[#1A0087] text-white' : actual ? 'bg-[#1A0087] ring-4 ring-[#1A0087]/15' : 'border-2 border-gray-200 bg-white'}`}>
+                                            {completado && <CheckIcon className="h-3 w-3" />}
+                                            {actual && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                                        </div>
+                                        {i < PASOS.length - 1 && (
+                                            <div className={`h-0.5 flex-1 rounded ${i < pasoActual ? 'bg-[#1A0087]' : 'bg-gray-200'}`} />
+                                        )}
+                                        {i === PASOS.length - 1 && <div className="h-0.5 flex-1" />}
+                                    </div>
+                                    <span className={`text-[10px] leading-tight text-center ${actual ? 'font-semibold text-[#1A0087]' : completado ? 'text-[#1A0087]/70' : 'text-gray-400'}`}>
                                         {paso.label}
                                     </span>
-                                </li>
+                                </div>
                             )
                         })}
-                    </ol>
+                    </div>
                 )}
 
                 {esRechazado && (
@@ -252,27 +232,31 @@ export function PedidoCardCompacta({
                         <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100">
                             {itemsMostrar.map((d, i) => {
                                 const cantidad = d.cantidad_aprobada ?? d.cantidad_solicitada
-                                const precio = d.productos?.precio ?? 0
+                                const precioBase = d.productos?.precio ?? 0
+                                const precio = d.precio_unitario ?? precioBase
                                 const subtotalLinea = precio * cantidad
-
+                                const subido = d.precio_unitario != null && d.precio_unitario > precioBase
                                 return (
-                                    <li key={i} className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+                                    <li key={i} className={`flex min-w-0 items-center gap-3 px-3 py-2.5 ${subido ? 'bg-amber-50/60' : ''}`}>
                                         <div className="min-w-0 flex-1">
-                                            <p className="truncate text-sm text-[#232323]">
-                                                {d.productos?.nombre || 'Producto'}
-                                            </p>
+                                            <p className="truncate text-sm text-[#232323]">{d.productos?.nombre || 'Producto'}</p>
                                             {precio > 0 && (
-                                                <p className="text-[11px] text-[#828282] mt-0.5 tabular-nums">
-                                                    {formatCOP(precio)} c/u
+                                                <p className="text-[11px] mt-0.5 tabular-nums flex items-center gap-1 flex-wrap">
+                                                    {subido ? (
+                                                        <>
+                                                            <span className="text-[#828282]">{formatCOP(precioBase)}</span>
+                                                            <span className="text-[#828282]">→</span>
+                                                            <span className="text-amber-700 font-semibold">{formatCOP(precio)}</span>
+                                                            <span className="text-amber-600 font-bold">*</span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-[#828282]">{formatCOP(precio)} c/u</span>
+                                                    )}
                                                 </p>
                                             )}
                                         </div>
-                                        <span className="shrink-0 rounded-md bg-gray-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-[#232323]">
-                                            ×{cantidad}
-                                        </span>
-                                        <span className="shrink-0 text-sm font-semibold tabular-nums text-[#232323] min-w-[80px] text-right">
-                                            {formatCOP(subtotalLinea)}
-                                        </span>
+                                        <span className="shrink-0 rounded-md bg-gray-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-[#232323]">×{cantidad}</span>
+                                        <span className="shrink-0 text-sm font-semibold tabular-nums text-[#232323] min-w-[80px] text-right">{formatCOP(subtotalLinea)}</span>
                                     </li>
                                 )
                             })}
@@ -285,21 +269,21 @@ export function PedidoCardCompacta({
                     ) : (
                         <p className="text-xs italic text-[#828282]">Sin productos</p>
                     )}
+
+                    {hayPrecioAjustado && (
+                        <p className="text-[11px] text-amber-700 italic mt-2">
+                            * Precio ajustado sobre el precio base.
+                        </p>
+                    )}
                 </section>
 
                 <footer className="flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
                     <div className="min-w-0">
                         <p className="text-xs text-[#828282]">Total</p>
-                        <p className="truncate text-lg font-bold tabular-nums text-[#1A0087]">
-                            {formatCOP(pedido.total || 0)}
-                        </p>
+                        <p className="truncate text-lg font-bold tabular-nums text-[#1A0087]">{formatCOP(pedido.total || 0)}</p>
                     </div>
-
                     {acciones && (
-                        <div
-                            onClick={e => e.stopPropagation()}
-                            className="flex shrink-0 items-center gap-2"
-                        >
+                        <div onClick={e => e.stopPropagation()} className="flex shrink-0 items-center gap-2 flex-wrap justify-end">
                             {acciones}
                         </div>
                     )}

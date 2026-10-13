@@ -28,7 +28,14 @@ interface PedidoHistorial {
   revertido: boolean
   usuarios: { nombre: string } | null
   clientes: { nombre: string; cc_nit: string } | null
-  detalle_pedido: { cantidad_solicitada: number }[]
+  detalle_pedido: {
+    id: string
+    cantidad_solicitada: number
+    cantidad_aprobada: number | null
+    precio_unitario: number | null
+    tipo_precio: string | null
+    productos: { id: string; nombre: string; precio: number; codigo: string | null } | null
+  }[]
 }
 
 const MESES = [
@@ -56,7 +63,7 @@ export function HistorialClienteModal({ cliente, onClose }: Props) {
   useEffect(() => {
     const cargar = async () => {
       setLoading(true)
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('pedidos')
         .select(`
                     id,
@@ -68,11 +75,24 @@ export function HistorialClienteModal({ cliente, onClose }: Props) {
                     revertido,
                     usuarios(nombre),
                     clientes(nombre, cc_nit),
-                    detalle_pedido(cantidad_solicitada)
+                    detalle_pedido(
+                      id,
+                      cantidad_solicitada,
+                      cantidad_aprobada,
+                      precio_unitario,
+                      tipo_precio,
+                      productos ( id, nombre, precio, codigo )
+                    )
                 `)
         .eq('cliente_id', cliente.id)
         .order('fecha', { ascending: false })
-      setPedidos((data as any) || [])
+
+      if (error) {
+        console.error('Error cargando historial de cliente:', error)
+        setPedidos([])
+      } else {
+        setPedidos((data as any) || [])
+      }
       setLoading(false)
     }
     cargar()
@@ -88,7 +108,6 @@ export function HistorialClienteModal({ cliente, onClose }: Props) {
     return Object.entries(grupos).sort(([a], [b]) => b.localeCompare(a))
   }, [pedidos])
 
-  // Abrir primer mes automáticamente
   useEffect(() => {
     if (porMes.length > 0) {
       setMesesAbiertos(prev => {
