@@ -24,6 +24,7 @@ export default function LoginPage() {
       }
     }
   }, [])
+  
 
   // ✅ CAMBIO 1: verifica requiere_cambio_password
   useEffect(() => {
@@ -219,7 +220,7 @@ export default function LoginPage() {
               Recordarme
             </label>
           </div>
-          <a href="/recuperar-password" className="text-[#1A0087] font-medium hover:underline">
+          <a href="/olvide-password" className="text-[#1A0087] font-medium hover:underline">
             ¿Olvidaste tu contraseña?
           </a>
         </div>

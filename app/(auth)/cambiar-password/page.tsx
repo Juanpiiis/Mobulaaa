@@ -12,10 +12,16 @@ export default function CambiarPasswordPage() {
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
     const [userName, setUserName] = useState('')
+    const [isRecovery, setIsRecovery] = useState(false) // NUEVO
     const router = useRouter()
     const supabase = createClient()
 
     useEffect(() => {
+        // NUEVO: ¿viene del correo de recuperación?
+        const recovery =
+            new URLSearchParams(window.location.search).get('recovery') === '1'
+        setIsRecovery(recovery)
+
         const checkUser = async () => {
             const { data: { user } } = await supabase.auth.getUser()
             if (!user) { router.replace('/login'); return }
@@ -28,7 +34,8 @@ export default function CambiarPasswordPage() {
 
             if (!perfil) { router.replace('/login'); return }
 
-            if (!perfil.requiere_cambio_password) {
+            // CAMBIO: en modo recuperación NO te saca de la página
+            if (!perfil.requiere_cambio_password && !recovery) {
                 router.replace('/dashboard'); return
             }
 
@@ -93,11 +100,14 @@ export default function CambiarPasswordPage() {
                 </div>
 
                 <h1 className="text-xl sm:text-2xl font-bold mb-2 text-center text-[#232323]">
-                    Cambia tu contraseña
+                    {isRecovery ? 'Restablece tu contraseña' : 'Cambia tu contraseña'}
                 </h1>
 
                 <p className="text-xs text-center text-[#828282] mb-6">
-                    Hola <span className="font-semibold">{userName}</span>, por seguridad debes cambiar tu contraseña antes de continuar.
+                    Hola <span className="font-semibold">{userName}</span>,{' '}
+                    {isRecovery
+                        ? 'escribe tu nueva contraseña para recuperar el acceso.'
+                        : 'por seguridad debes cambiar tu contraseña antes de continuar.'}
                 </p>
 
                 {error && (

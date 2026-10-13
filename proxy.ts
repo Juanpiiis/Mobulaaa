@@ -27,10 +27,18 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
-                      request.nextUrl.pathname.startsWith('/registro')
+  const path = request.nextUrl.pathname
 
-  if (!user && !isAuthRoute) {
+  // Rutas de autenticación: si ya hay sesión, te manda a tu panel
+  const isAuthRoute =
+    path.startsWith('/login') ||
+    path.startsWith('/registro') ||
+    path.startsWith('/olvide-password') // 👈 NUEVO
+
+  // Rutas públicas que NO deben redirigir a nadie (el callback del correo)
+  const isPublicRoute = path.startsWith('/auth/callback') // 👈 NUEVO
+
+  if (!user && !isAuthRoute && !isPublicRoute) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
