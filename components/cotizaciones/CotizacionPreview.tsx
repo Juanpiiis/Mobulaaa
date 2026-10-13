@@ -45,6 +45,8 @@ interface PedidoData {
     detalle_pedido: {
         cantidad_solicitada: number
         cantidad_aprobada: number | null
+        precio_unitario: number | null
+        tipo_precio: string | null
         productos: {
             nombre: string
             codigo: string | null
@@ -68,8 +70,7 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
           *,
           clientes(nombre, cc_nit, telefono, email, direccion),
           bodegas(nombre),
-          detalle_pedido(cantidad_solicitada, cantidad_aprobada, productos(nombre, codigo, precio))
-        `)
+          detalle_pedido(cantidad_solicitada, cantidad_aprobada, precio_unitario, tipo_precio, productos(nombre, codigo, precio))        `)
                 .eq('id', pedidoId)
                 .single()
 
@@ -293,8 +294,10 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
                                     <tbody>
                                         {pedido.detalle_pedido.map((d, i) => {
                                             const cantidad = d.cantidad_aprobada || d.cantidad_solicitada
-                                            const precio = d.productos?.precio || 0
+                                            const precioBase = d.productos?.precio || 0
+                                            const precio = d.precio_unitario ?? precioBase
                                             const total = precio * cantidad
+                                            const subido = d.precio_unitario != null && d.precio_unitario > precioBase
                                             return (
                                                 <tr
                                                     key={i}
@@ -311,6 +314,14 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
                                                     </td>
                                                     <td className="p-2.5 text-right text-[#828282]">
                                                         {formatCOP(precio)}
+                                                        {subido && (
+                                                            <span
+                                                                className="text-amber-600 font-semibold ml-1"
+                                                                title={`Precio base: ${formatCOP(precioBase)}`}
+                                                            >
+                                                                *
+                                                            </span>
+                                                        )}
                                                     </td>
                                                     <td className="p-2.5 text-right font-semibold text-[#232323]">
                                                         {formatCOP(total)}
@@ -362,6 +373,11 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
 
                             {/* Footer */}
                             <div className="border-t border-gray-200 pt-4 text-xs text-[#828282] text-center space-y-1">
+                                {pedido.detalle_pedido.some((d: any) => d.precio_unitario != null && d.precio_unitario > (d.productos?.precio || 0)) && (
+                                    <p className="text-amber-700 text-[11px] italic mb-2">
+                                        * Precio ajustado sobre el precio base.
+                                    </p>
+                                )}
                                 <p>Cotización válida por 15 días</p>
                                 <p>Vence el {calcularVencimiento(pedido.fecha)}</p>
                                 <p className="pt-2 text-[#1A0087] font-medium">

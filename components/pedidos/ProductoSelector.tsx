@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import {
     XMarkIcon,
     LockClosedIcon,
@@ -16,7 +17,9 @@ interface Props {
     index: number
     producto: ProductoBusqueda
     cantidad: string
+    precioUnitario: number
     onCantidadChange: (index: number, cantidad: string) => void
+    onPrecioChange: (index: number, precio: number) => void
     onEliminar: (index: number) => void
     formatCOP: (v: number) => string
 }
@@ -25,13 +28,27 @@ export function ProductoSelector({
     index,
     producto,
     cantidad,
+    precioUnitario,
     onCantidadChange,
+    onPrecioChange,
     onEliminar,
     formatCOP,
 }: Props) {
     const cantNum = parseInt(cantidad || '0') || 0
     const congelado = esProductoCongelado(producto)
-    const subtotal = producto.precio * cantNum
+
+    // Estado local del input de precio, como string (permite vacío)
+    const [precioTexto, setPrecioTexto] = useState<string>(
+        precioUnitario ? String(precioUnitario) : String(producto.precio)
+    )
+
+    // Sincronizar si el precio externo cambia desde fuera (ej: reset del modal)
+    useEffect(() => {
+        setPrecioTexto(precioUnitario ? String(precioUnitario) : '')
+    }, [precioUnitario])
+
+    const precioFinal = precioUnitario || producto.precio
+    const subtotal = precioFinal * cantNum
 
     const setCantidad = (n: number) => {
         if (n < 1) return
@@ -51,6 +68,26 @@ export function ProductoSelector({
         onCantidadChange(index, String(Math.min(n, max)))
     }
 
+    const handleInputPrecio = (valor: string) => {
+        const limpio = valor.replace(/[^0-9]/g, '')
+        setPrecioTexto(limpio)
+        if (limpio === '') {
+            // deja el item con precio 0 para que el padre no arrastre un valor viejo
+            onPrecioChange(index, 0)
+            return
+        }
+        onPrecioChange(index, parseInt(limpio))
+    }
+
+    const handleBlurPrecio = () => {
+        const num = parseInt(precioTexto || '0')
+        if (!precioTexto || isNaN(num) || num < producto.precio) {
+            // Ajusta al mínimo
+            onPrecioChange(index, producto.precio)
+            setPrecioTexto(String(producto.precio))
+        }
+    }
+
     return (
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="p-4 space-y-4">
@@ -63,7 +100,7 @@ export function ProductoSelector({
                         <p className="text-xs text-[#828282] mt-1 flex items-center gap-1.5 flex-wrap">
                             {producto.sku && <span className="font-mono">{producto.sku}</span>}
                             {producto.sku && <span>·</span>}
-                            <span>{formatCOP(producto.precio)} c/u</span>
+                            <span>Mínimo: {formatCOP(producto.precio)} c/u</span>
                         </p>
                     </div>
                     <button
@@ -86,9 +123,32 @@ export function ProductoSelector({
                     </div>
                 )}
 
-                {/* Cantidad */}
                 {!congelado && (
                     <>
+                        {/* Precio unitario */}
+                        <div>
+                            <label className="block text-xs font-medium text-[#828282] mb-1.5">
+                                Precio unitario
+                            </label>
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                value={precioTexto}
+                                onChange={(e) => handleInputPrecio(e.target.value)}
+                                onFocus={(e) => e.target.select()}
+                                onBlur={handleBlurPrecio}
+                                placeholder={String(producto.precio)}
+                                className="w-full h-11 border border-gray-200 rounded-xl px-3 text-base font-semibold text-[#232323] focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
+                                aria-label={`Precio unitario de ${producto.nombre}`}
+                            />
+                            {precioFinal > producto.precio && (
+                                <p className="text-[10px] text-green-700 mt-1">
+                                    ↑ Subido {formatCOP(precioFinal - producto.precio)} sobre el mínimo
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Cantidad */}
                         <div>
                             <label className="block text-xs font-medium text-[#828282] mb-2">
                                 Cantidad · Stock: <span className="font-semibold">{producto.stock_disponible}</span>
