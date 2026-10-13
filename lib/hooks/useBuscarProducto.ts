@@ -42,6 +42,14 @@ export function motivoCongelado(p: ProductoBusqueda): string {
     return `Congelado (stock ${p.stock_disponible} ≤ ${limite})`
 }
 
+/**
+ * Sanea el término de búsqueda para que sea seguro pasarlo a PostgREST (.or).
+ * Quita los caracteres que rompen la sintaxis del filtro y los reemplaza por espacio.
+ */
+function sanearTermino(t: string): string {
+    return t.replace(/[,()%*\\]/g, ' ').trim()
+}
+
 export function useBuscarProducto(
     termino: string,
     bodegaId: string | undefined,
@@ -55,7 +63,9 @@ export function useBuscarProducto(
     const requestIdRef = useRef(0)
 
     useEffect(() => {
-        if (!debounced || debounced.length < 2) {
+        const terminoLimpio = sanearTermino(debounced)
+
+        if (!terminoLimpio || terminoLimpio.length < 2) {
             setResultados(productosBase)
             setBuscando(false)
             return
@@ -66,35 +76,43 @@ export function useBuscarProducto(
 
         const buscar = async () => {
             try {
-                const { data } = await supabase
+                const { data, error } = await supabase
                     .from('inventario')
                     .select(`
                         cantidad_disponible,
+                        congelado_manual,
+                        limite_congelado,
                         productos!inner(
-                            id, nombre, precio, categoria, sku,
-                            congelado_manual, limite_congelado
+                            id, nombre, precio, categoria, sku
                         )
                     `)
                     .eq('bodega_id', bodegaId)
                     .gt('cantidad_disponible', 0)
-                    .or(`nombre.ilike.%${debounced}%,sku.ilike.%${debounced}%`, { foreignTable: 'productos' })
+                    .or(`nombre.ilike.%${terminoLimpio}%,sku.ilike.%${terminoLimpio}%`, { foreignTable: 'productos' })
                     .limit(50)
 
                 if (currentRequestId !== requestIdRef.current) return
+
+                if (error) {
+                    console.error('Error buscando productos:', error)
+                    setResultados([])
+                    return
+                }
 
                 const items: ProductoBusqueda[] =
                     data
                         ?.map((i: any) => ({
                             ...i.productos,
                             stock_disponible: i.cantidad_disponible || 0,
-                            congelado_manual: i.productos.congelado_manual ?? false,
-                            limite_congelado: i.productos.limite_congelado ?? null,
+                            congelado_manual: i.congelado_manual ?? false,
+                            limite_congelado: i.limite_congelado ?? null,
                         }))
                         .filter((p: any) => p.id) || []
 
                 setResultados(items)
-            } catch {
+            } catch (e) {
                 if (currentRequestId !== requestIdRef.current) return
+                console.error('Error buscando productos:', e)
                 setResultados([])
             } finally {
                 if (currentRequestId === requestIdRef.current) setBuscando(false)

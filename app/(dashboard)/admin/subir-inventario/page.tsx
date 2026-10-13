@@ -104,13 +104,19 @@ export default function SubirInventarioPage() {
   const handleAplicarAhora = async () => {
     if (!corteCreado) return
 
+    const ausentes = corteCreado.resumen.ausentes
+    const avisoAusentes = ausentes > 0
+      ? `\n\n⚠️ Hay ${ausentes} producto${ausentes === 1 ? '' : 's'} ausente${ausentes === 1 ? '' : 's'} en el Excel. Si aplicas, se pondrá su stock en 0.`
+      : ''
+
     const confirmar = window.confirm(
       '⚠️ ¿Estás seguro de aplicar este corte al inventario?\n\n' +
       'Esto va a:\n' +
       '• Actualizar el stock de los productos\n' +
       '• Crear productos nuevos\n' +
-      '• Registrar movimientos de entrada/salida\n\n' +
-      'Esta acción se puede revertir después.'
+      '• Registrar movimientos de entrada/salida' +
+      avisoAusentes +
+      '\n\nEsta acción se puede revertir después.'
     )
     if (!confirmar) return
 
@@ -130,7 +136,6 @@ export default function SubirInventarioPage() {
         `Movimientos generados: ${data.movimientos || 0}`
       )
 
-      // Redirigir al detalle del corte
       router.push(`/admin/cortes/${corteCreado.corteId}`)
     } catch (err: any) {
       alert('Error: ' + err.message)
@@ -193,8 +198,8 @@ export default function SubirInventarioPage() {
             {/* Drop zone */}
             <div
               className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center transition-colors cursor-pointer ${dragActive
-                  ? 'border-[#1A0087] bg-[#1A0087]/5'
-                  : 'border-gray-300 bg-white hover:bg-gray-50'
+                ? 'border-[#1A0087] bg-[#1A0087]/5'
+                : 'border-gray-300 bg-white hover:bg-gray-50'
                 }`}
               onDragOver={(e) => {
                 e.preventDefault()

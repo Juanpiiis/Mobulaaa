@@ -27,6 +27,7 @@ export default function ReportesPage() {
   const [vendedoresTop, setVendedoresTop] = useState<VendedorTop[]>([])
   const [totalFacturado, setTotalFacturado] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [fechaDesde, setFechaDesde] = useState(() => {
     const d = new Date()
     d.setMonth(d.getMonth() - 1)
@@ -39,14 +40,20 @@ export default function ReportesPage() {
   const fetchReports = async () => {
     if (!tiendaActual) return
     setLoading(true)
+    setError('')
 
     // Movimientos por tipo
-    const { data: movs } = await supabase
+    const { data: movs, error: errMovs } = await supabase
       .from('movimientos')
       .select('tipo, cantidad')
-      .or(`bodega_origen_id.eq.${tiendaActual.id},bodega_destino_id.eq.${tiendaActual.id}`)
+      .eq('bodega_id', tiendaActual.id)
       .gte('fecha', fechaDesde)
       .lte('fecha', fechaHasta + 'T23:59:59')
+
+    if (errMovs) {
+      console.error('Error cargando movimientos:', errMovs)
+      setError('No se pudieron cargar los movimientos: ' + errMovs.message)
+    }
 
     const resumenMovs: Record<string, ReporteMovimiento> = {}
     movs?.forEach(m => {
@@ -57,7 +64,7 @@ export default function ReportesPage() {
     setMovimientos(Object.values(resumenMovs))
 
     // Productos más pedidos
-    const { data: detalles } = await supabase
+    const { data: detalles, error: errDet } = await supabase
       .from('detalle_pedido')
       .select('cantidad_solicitada, productos(nombre, categoria), pedidos!inner(bodega_id, estado, fecha)')
       .eq('pedidos.bodega_id', tiendaActual.id)
@@ -65,6 +72,11 @@ export default function ReportesPage() {
       .neq('pedidos.estado', 'rechazado_cartera')
       .gte('pedidos.fecha', fechaDesde)
       .lte('pedidos.fecha', fechaHasta + 'T23:59:59')
+
+    if (errDet) {
+      console.error('Error cargando detalle de pedidos:', errDet)
+      setError('No se pudieron cargar los productos: ' + errDet.message)
+    }
 
     const resumenProductos: Record<string, ProductoTop> = {}
     detalles?.forEach((d: any) => {
@@ -76,13 +88,18 @@ export default function ReportesPage() {
     setProductosTop(Object.values(resumenProductos).sort((a, b) => b.total_pedido - a.total_pedido).slice(0, 10))
 
     // Vendedores top
-    const { data: pedidos } = await supabase
+    const { data: pedidos, error: errPed } = await supabase
       .from('pedidos')
       .select('total, usuarios(nombre)')
       .eq('bodega_id', tiendaActual.id)
       .eq('estado', 'aprobado_cartera')
       .gte('fecha', fechaDesde)
       .lte('fecha', fechaHasta + 'T23:59:59')
+
+    if (errPed) {
+      console.error('Error cargando pedidos:', errPed)
+      setError('No se pudieron cargar los pedidos: ' + errPed.message)
+    }
 
     const resumenVendedores: Record<string, VendedorTop> = {}
     let facturado = 0
@@ -106,7 +123,8 @@ export default function ReportesPage() {
   const tipoColor: Record<string, string> = {
     entrada: 'bg-green-100 text-green-700',
     salida: 'bg-red-100 text-red-700',
-    traslado: 'bg-blue-100 text-blue-700'
+    traslado: 'bg-blue-100 text-blue-700',
+    ajuste: 'bg-purple-100 text-purple-700',
   }
 
   return (
@@ -116,7 +134,12 @@ export default function ReportesPage() {
         <p className="text-gray-500 text-sm">{tiendaActual?.nombre}</p>
       </div>
 
-      {/* Filtros fecha */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm mb-6">
+          ❌ {error}
+        </div>
+      )}
+
       <div className="bg-white rounded-lg shadow p-4 mb-6 flex gap-4 items-end">
         <div>
           <label className="block text-sm font-medium mb-1">Desde</label>
@@ -131,21 +154,18 @@ export default function ReportesPage() {
 
       {loading ? <p>Cargando...</p> : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-          {/* Total facturado */}
           <div className="lg:col-span-2 bg-blue-600 text-white rounded-lg shadow p-6">
             <p className="text-blue-200 text-sm mb-1">Total facturado en el período</p>
             <p className="text-4xl font-bold">{formatCOP(totalFacturado)}</p>
           </div>
 
-          {/* Movimientos por tipo */}
           <div className="bg-white rounded-lg shadow p-4">
             <h2 className="font-bold text-lg mb-4">Movimientos por tipo</h2>
             {movimientos.length === 0 ? <p className="text-gray-400 text-sm">Sin movimientos en el período</p> : (
               <div className="flex flex-col gap-3">
                 {movimientos.map(m => (
                   <div key={m.tipo} className="flex justify-between items-center">
-                    <span className={`px-3 py-1 rounded text-sm capitalize ${tipoColor[m.tipo]}`}>{m.tipo}</span>
+                    <span className={`px-3 py-1 rounded text-sm capitalize ${tipoColor[m.tipo] || 'bg-gray-100 text-gray-700'}`}>{m.tipo}</span>
                     <div className="text-right">
                       <p className="font-bold">{m.total} unidades</p>
                       <p className="text-xs text-gray-400">{m.cantidad_movimientos} movimientos</p>
@@ -156,7 +176,6 @@ export default function ReportesPage() {
             )}
           </div>
 
-          {/* Vendedores top */}
           <div className="bg-white rounded-lg shadow p-4">
             <h2 className="font-bold text-lg mb-4">Vendedores por valor</h2>
             {vendedoresTop.length === 0 ? <p className="text-gray-400 text-sm">Sin pedidos aprobados en el período</p> : (
@@ -177,7 +196,6 @@ export default function ReportesPage() {
             )}
           </div>
 
-          {/* Productos más pedidos */}
           <div className="lg:col-span-2 bg-white rounded-lg shadow p-4">
             <h2 className="font-bold text-lg mb-4">Top 10 productos más pedidos</h2>
             {productosTop.length === 0 ? <p className="text-gray-400 text-sm">Sin pedidos en el período</p> : (
@@ -203,7 +221,6 @@ export default function ReportesPage() {
               </table>
             )}
           </div>
-
         </div>
       )}
     </div>

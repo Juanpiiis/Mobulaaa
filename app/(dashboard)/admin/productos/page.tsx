@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { useTienda } from '@/lib/context/TiendaContext'
 import {
   PlusIcon,
   MagnifyingGlassIcon,
@@ -40,8 +41,13 @@ interface Producto {
   precio_mayorista: number | null
   precio_tat: number | null
   activo: boolean
+}
+
+interface CongeladoInfo {
   congelado_manual: boolean
   limite_congelado: number | null
+  stock_disponible: number
+  bodega_id: string
 }
 
 interface Bodega {
@@ -49,14 +55,16 @@ interface Bodega {
   nombre: string
 }
 
+const LIMITE_DEFAULT = 150
+
 // Helper: ¿está congelado?
-function esProductoCongelado(p: Producto): boolean {
-  if (p.congelado_manual) return true
-  const limite = p.limite_congelado ?? 150
+// Lee el congelado desde `inventario` de la bodega actual.
+function esProductoCongelado(info: CongeladoInfo | undefined): boolean {
+  if (!info) return false
+  if (info.congelado_manual) return true
+  const limite = info.limite_congelado ?? LIMITE_DEFAULT
   if (limite === 0) return false
-  // No tenemos el stock en esta vista, pero si congelado_manual es true o el producto está marcado,
-  // lo mostramos como congelado. El stock real está en inventario.
-  return false
+  return info.stock_disponible <= limite
 }
 
 // Helper: normalizar texto (mayúsculas, sin tildes, espacios colapsados)
@@ -72,7 +80,9 @@ function normalizar(s: string | null | undefined): string {
 export default function ProductosPage() {
   const [productos, setProductos] = useState<Producto[]>([])
   const [bodegas, setBodegas] = useState<Bodega[]>([])
+  const [congeladoPorProducto, setCongeladoPorProducto] = useState<Map<string, CongeladoInfo>>(new Map())
   const [loading, setLoading] = useState(true)
+  const [errorCarga, setErrorCarga] = useState('')
 
   // Filtros
   const [busqueda, setBusqueda] = useState('')
@@ -97,27 +107,71 @@ export default function ProductosPage() {
 
   const supabase = createClient()
   const router = useRouter()
+  const { tiendaActual } = useTienda()
 
   const cargarDatos = async () => {
     setLoading(true)
-    const { data: p } = await supabase
+    setErrorCarga('')
+
+    const { data: p, error: errP } = await supabase
       .from('productos')
-      .select('*')
+      .select('id, nombre, descripcion, categoria, categoria_excel, codigo, referencia_excel, marca, precio, precio_mayorista, precio_tat, activo')
       .order('nombre', { ascending: true })
-    const { data: b } = await supabase
+
+    if (errP) {
+      console.error('Error cargando productos:', errP)
+      setErrorCarga('No se pudieron cargar los productos: ' + errP.message)
+      setLoading(false)
+      return
+    }
+
+    const { data: b, error: errB } = await supabase
       .from('bodegas')
-      .select('*')
+      .select('id, nombre')
       .eq('activo', true)
       .order('nombre')
 
+    if (errB) {
+      console.error('Error cargando bodegas:', errB)
+    }
+
     setProductos(p || [])
     setBodegas(b || [])
+
+    // Cargar congelado desde inventario de la bodega actual
+    if (tiendaActual) {
+      const { data: inv, error: errInv } = await supabase
+        .from('inventario')
+        .select('producto_id, cantidad_disponible, congelado_manual, limite_congelado')
+        .eq('bodega_id', tiendaActual.id)
+
+      if (errInv) {
+        console.error('Error cargando inventario:', errInv)
+        setErrorCarga('No se pudo cargar el inventario de la bodega: ' + errInv.message)
+        setCongeladoPorProducto(new Map())
+      } else {
+        const map = new Map<string, CongeladoInfo>()
+        for (const i of inv || []) {
+          map.set(i.producto_id, {
+            congelado_manual: i.congelado_manual ?? false,
+            limite_congelado: i.limite_congelado ?? null,
+            stock_disponible: i.cantidad_disponible ?? 0,
+            bodega_id: tiendaActual.id,
+          })
+        }
+        setCongeladoPorProducto(map)
+      }
+    } else {
+      setCongeladoPorProducto(new Map())
+    }
+
     setLoading(false)
   }
 
   useEffect(() => {
     cargarDatos()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tiendaActual?.id])
 
   // ─────────────────────────────────────────────
   // Guardar (modal rápido)
@@ -128,7 +182,7 @@ export default function ProductosPage() {
       : form.nombre.toUpperCase()
 
     if (editando) {
-      await supabase
+      const { error } = await supabase
         .from('productos')
         .update({
           nombre: nombreCompleto,
@@ -137,8 +191,14 @@ export default function ProductosPage() {
           descripcion: form.color,
         })
         .eq('id', editando.id)
+
+      if (error) {
+        console.error('Error actualizando producto:', error)
+        setErrorCarga('No se pudo actualizar el producto: ' + error.message)
+        return
+      }
     } else {
-      const { data: producto } = await supabase
+      const { data: producto, error: errIns } = await supabase
         .from('productos')
         .insert({
           nombre: nombreCompleto,
@@ -150,13 +210,23 @@ export default function ProductosPage() {
         .select()
         .single()
 
-      if (producto && form.bodega_id) {
-        await supabase.from('inventario').insert({
+      if (errIns || !producto) {
+        console.error('Error creando producto:', errIns)
+        setErrorCarga('No se pudo crear el producto: ' + (errIns?.message || 'Error desconocido'))
+        return
+      }
+
+      if (form.bodega_id) {
+        const { error: errInv } = await supabase.from('inventario').insert({
           producto_id: producto.id,
           bodega_id: form.bodega_id,
           cantidad_disponible: parseInt(form.cantidad) || 0,
           cantidad_minima: 0,
         })
+        if (errInv) {
+          console.error('Error creando inventario inicial:', errInv)
+          setErrorCarga('Producto creado, pero falló el inventario inicial: ' + errInv.message)
+        }
       }
     }
 
@@ -195,16 +265,28 @@ export default function ProductosPage() {
   }
 
   const handleToggleActivo = async (p: Producto) => {
-    await supabase
+    const { error } = await supabase
       .from('productos')
       .update({ activo: !p.activo })
       .eq('id', p.id)
+
+    if (error) {
+      console.error('Error cambiando activo:', error)
+      setErrorCarga('No se pudo cambiar el estado: ' + error.message)
+      return
+    }
     cargarDatos()
   }
 
   const confirmarEliminar = async () => {
     if (!eliminando) return
-    await supabase.from('productos').update({ activo: false }).eq('id', eliminando.id)
+    const { error } = await supabase.from('productos').update({ activo: false }).eq('id', eliminando.id)
+    if (error) {
+      console.error('Error eliminando producto:', error)
+      setErrorCarga('No se pudo eliminar el producto: ' + error.message)
+      setEliminando(null)
+      return
+    }
     setEliminando(null)
     cargarDatos()
   }
@@ -213,7 +295,6 @@ export default function ProductosPage() {
   // Filtrado UNIFICADO
   // ─────────────────────────────────────────────
 
-  // Categorías únicas disponibles (combinadas de ambos campos, normalizadas)
   const categoriasDisponibles = useMemo(() => {
     const set = new Set<string>()
     productos.forEach((p) => {
@@ -226,23 +307,19 @@ export default function ProductosPage() {
   }, [productos])
 
   const filtrados = productos.filter((p) => {
-    // 1. Activo
     if (!mostrarInactivos && !p.activo) return false
 
-    // 2. Solo congelados
-    if (mostrarSoloCongelados && !esProductoCongelado(p)) return false
+    const congelado = esProductoCongelado(congeladoPorProducto.get(p.id))
+    if (mostrarSoloCongelados && !congelado) return false
 
-    // 3. Categoría (match flexible: normalizado)
     if (categoriaFiltro) {
       const ce = normalizar(p.categoria_excel)
       const c = normalizar(p.categoria)
       const filtro = normalizar(categoriaFiltro)
-
       const match = ce === filtro || c === filtro
       if (!match) return false
     }
 
-    // 4. Búsqueda
     if (busqueda.trim()) {
       const q = normalizar(busqueda).toLowerCase()
       const hayMatch =
@@ -263,7 +340,6 @@ export default function ProductosPage() {
     return '$' + n.toLocaleString('es-CO')
   }
 
-  // Mostrar categoría efectiva en la tarjeta
   const getCategoriaMostrar = (p: Producto): string | null => {
     const ce = (p.categoria_excel || '').trim()
     const c = (p.categoria || '').trim()
@@ -282,6 +358,11 @@ export default function ProductosPage() {
             <p className="text-sm text-[#828282] mt-0.5">
               {filtrados.length} de {productos.length} productos
             </p>
+            {tiendaActual && (
+              <p className="text-xs text-[#828282] mt-0.5">
+                Bodega: <span className="font-medium text-[#232323]">{tiendaActual.nombre}</span>
+              </p>
+            )}
           </div>
           <button
             onClick={() => setShowModal(true)}
@@ -295,10 +376,19 @@ export default function ProductosPage() {
 
       <main className="w-full px-4 sm:px-6 py-6 space-y-4">
 
+        {/* Error */}
+        {errorCarga && (
+          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm flex items-start justify-between gap-3">
+            <span>❌ {errorCarga}</span>
+            <button onClick={() => setErrorCarga('')} className="text-xs font-medium">
+              Cerrar
+            </button>
+          </div>
+        )}
+
         {/* Filtros */}
         <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* Buscador */}
             <div className="relative">
               <MagnifyingGlassIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
@@ -310,7 +400,6 @@ export default function ProductosPage() {
               />
             </div>
 
-            {/* Categoría */}
             <select
               value={categoriaFiltro}
               onChange={(e) => setCategoriaFiltro(e.target.value)}
@@ -347,14 +436,12 @@ export default function ProductosPage() {
           </div>
         </div>
 
-        {/* Loading */}
         {loading && (
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
           </div>
         )}
 
-        {/* Sin resultados */}
         {!loading && filtrados.length === 0 && (
           <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center">
             <p className="text-[#828282] text-sm">
@@ -363,11 +450,11 @@ export default function ProductosPage() {
           </div>
         )}
 
-        {/* Lista de productos (tarjetas) */}
         {!loading && filtrados.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {filtrados.map((p) => {
-              const congelado = esProductoCongelado(p)
+              const infoCong = congeladoPorProducto.get(p.id)
+              const congelado = esProductoCongelado(infoCong)
               const catMostrar = getCategoriaMostrar(p)
               return (
                 <div
@@ -375,7 +462,6 @@ export default function ProductosPage() {
                   className={`bg-white border border-gray-200 rounded-2xl p-4 hover:border-[#1A0087]/30 hover:shadow-md transition-all ${!p.activo ? 'opacity-60' : ''
                     }`}
                 >
-                  {/* Header tarjeta */}
                   <div className="flex items-start justify-between gap-2 mb-3">
                     <div className="min-w-0 flex-1">
                       <h3 className="font-bold text-[#232323] text-sm leading-tight line-clamp-2">
@@ -407,7 +493,6 @@ export default function ProductosPage() {
                     </div>
                   </div>
 
-                  {/* Info */}
                   <div className="space-y-1 text-xs text-[#828282] mb-3">
                     {p.codigo && (
                       <p>
@@ -425,9 +510,14 @@ export default function ProductosPage() {
                         ⚠️ Sin referencia de Excel
                       </p>
                     )}
+                    {infoCong && (
+                      <p>
+                        <span className="font-medium text-[#232323]">Stock:</span>{' '}
+                        {infoCong.stock_disponible}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Precios */}
                   <div className="grid grid-cols-3 gap-1.5 mb-3 text-center">
                     <div className="bg-gray-50 rounded-lg py-1.5">
                       <p className="text-[9px] text-[#828282] uppercase">Mayor.</p>
@@ -449,7 +539,6 @@ export default function ProductosPage() {
                     </div>
                   </div>
 
-                  {/* Acciones */}
                   <div className="flex gap-1.5 pt-3 border-t border-gray-100">
                     <button
                       onClick={() => handleEditarCompleto(p)}
@@ -469,8 +558,8 @@ export default function ProductosPage() {
                     <button
                       onClick={() => handleToggleActivo(p)}
                       className={`min-h-[36px] px-2 text-xs font-medium rounded-lg transition-colors ${p.activo
-                          ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
-                          : 'text-green-600 bg-green-50 hover:bg-green-100'
+                        ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                        : 'text-green-600 bg-green-50 hover:bg-green-100'
                         }`}
                       title={p.activo ? 'Desactivar' : 'Activar'}
                     >

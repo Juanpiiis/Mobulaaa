@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend
 } from 'recharts'
 import {
-  CubeIcon, ArrowTrendingUpIcon, ExclamationTriangleIcon, 
+  CubeIcon, ArrowTrendingUpIcon, ExclamationTriangleIcon,
   ClipboardDocumentCheckIcon
 } from '@heroicons/react/24/outline'
 
@@ -18,6 +18,7 @@ export default function EstadisticasPage() {
   const { tiendaActual } = useTienda()
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [periodo, setPeriodo] = useState('30')
 
   const [kpis, setKpis] = useState({
@@ -29,7 +30,7 @@ export default function EstadisticasPage() {
   })
   const [stockPorCategoria, setStockPorCategoria] = useState<any[]>([])
   const [movimientosPorDia, setMovimientosPorDia] = useState<any[]>([])
-  const [totalMovimientos, setTotalMovimientos] = useState({ entradas: 0, salidas: 0, transferencias: 0 })
+  const [totalMovimientos, setTotalMovimientos] = useState({ entradas: 0, salidas: 0, traslados: 0 })
   const [ultimoCorteInfo, setUltimoCorteInfo] = useState<any>(null)
   const [pedidosAtencion, setPedidosAtencion] = useState<any[]>([])
   const [actividadReciente, setActividadReciente] = useState<any[]>([])
@@ -38,125 +39,156 @@ export default function EstadisticasPage() {
   const fetchEstadisticas = useCallback(async () => {
     if (!tiendaActual) return
     setLoading(true)
+    setError('')
 
-    try {
-      // 1. KPIs
-      const { data: inventario } = await supabase
-        .from('inventario')
-        .select('cantidad_disponible, cantidad_minima')
-        .eq('bodega_id', tiendaActual.id)
+    // 1. KPIs
+    const { data: inventario, error: errInv } = await supabase
+      .from('inventario')
+      .select('cantidad_disponible, cantidad_minima')
+      .eq('bodega_id', tiendaActual.id)
 
-      let totalProd = 0, unidades = 0, bajoMin = 0, agotados = 0
-      inventario?.forEach((item: any) => {
-        totalProd++
-        unidades += item.cantidad_disponible || 0
-        if (item.cantidad_disponible <= 0) agotados++
-        else if (item.cantidad_disponible < item.cantidad_minima) bajoMin++
-      })
-      setKpis({ totalProductos: totalProd, unidadesDisponibles: unidades, bajoMinimo: bajoMin, agotados: agotados, movimientosPeriodo: 0 })
+    if (errInv) {
+      console.error('Error cargando inventario:', errInv)
+      setError('No se pudo cargar inventario: ' + errInv.message)
+      setLoading(false)
+      return
+    }
 
-      // 2. Stock por categoría (Si tienes categorías como FK, cambia el select)
-      const { data: invCategorias } = await supabase
-        .from('inventario')
-        .select('cantidad_disponible, productos(categoria, color)')
-        .eq('bodega_id', tiendaActual.id)
+    let totalProd = 0, unidades = 0, bajoMin = 0, agotados = 0
+    inventario?.forEach((item: any) => {
+      totalProd++
+      unidades += item.cantidad_disponible || 0
+      if (item.cantidad_disponible <= 0) agotados++
+      else if (item.cantidad_disponible < item.cantidad_minima) bajoMin++
+    })
+    setKpis(prev => ({ ...prev, totalProductos: totalProd, unidadesDisponibles: unidades, bajoMinimo: bajoMin, agotados: agotados }))
 
-      const catMap: Record<string, number> = {}
-      invCategorias?.forEach((i: any) => {
-        const cat = i.productos?.categoria || 'OTROS'
-        catMap[cat] = (catMap[cat] || 0) + (i.cantidad_disponible || 0)
-      })
-      setStockPorCategoria(Object.entries(catMap).map(([categoria, cantidad]) => ({ categoria, cantidad })).sort((a, b) => b.cantidad - a.cantidad))
+    // 2. Stock por categoría
+    const { data: invCategorias, error: errCat } = await supabase
+      .from('inventario')
+      .select('cantidad_disponible, productos(categoria, color)')
+      .eq('bodega_id', tiendaActual.id)
 
-      // 3. Movimientos
-      const fechaInicio = new Date()
-      fechaInicio.setDate(fechaInicio.getDate() - parseInt(periodo))
+    if (errCat) {
+      console.error('Error cargando categorías:', errCat)
+    }
 
-      const { data: movimientos } = await supabase
-        .from('movimientos')
-        .select('tipo, cantidad, fecha, productos(nombre)')
-        .or(`bodega_origen_id.eq.${tiendaActual.id},bodega_destino_id.eq.${tiendaActual.id}`)
-        .gte('fecha', fechaInicio.toISOString())
-        .order('fecha', { ascending: false })
+    const catMap: Record<string, number> = {}
+    invCategorias?.forEach((i: any) => {
+      const cat = i.productos?.categoria || 'OTROS'
+      catMap[cat] = (catMap[cat] || 0) + (i.cantidad_disponible || 0)
+    })
+    setStockPorCategoria(Object.entries(catMap).map(([categoria, cantidad]) => ({ categoria, cantidad })).sort((a, b) => b.cantidad - a.cantidad))
 
-      let entradas = 0, salidas = 0, transferencias = 0
-      const movsDiaMap: Record<string, any> = {}
-      movimientos?.forEach((m: any) => {
-        const dia = new Date(m.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
-        if (!movsDiaMap[dia]) movsDiaMap[dia] = { dia, Entradas: 0, Salidas: 0, Transferencias: 0 }
-        if (m.tipo === 'entrada') { entradas += m.cantidad; movsDiaMap[dia].Entradas += m.cantidad }
-        if (m.tipo === 'salida') { salidas += m.cantidad; movsDiaMap[dia].Salidas += m.cantidad }
-        if (m.tipo === 'transferencia') { transferencias += m.cantidad; movsDiaMap[dia].Transferencias += m.cantidad }
-      })
+    // 3. Movimientos
+    const fechaInicio = new Date()
+    fechaInicio.setDate(fechaInicio.getDate() - parseInt(periodo))
 
-      setTotalMovimientos({ entradas, salidas, transferencias })
-      setMovimientosPorDia(Object.values(movsDiaMap))
-      setKpis(prev => ({ ...prev, movimientosPeriodo: movimientos?.length || 0 }))
+    const { data: movimientos, error: errMov } = await supabase
+      .from('movimientos')
+      .select('tipo, cantidad, fecha, productos(nombre)')
+      .eq('bodega_id', tiendaActual.id)
+      .gte('fecha', fechaInicio.toISOString())
+      .order('fecha', { ascending: false })
 
-      // 4. Último corte
-      const { data: corte } = await supabase
-        .from('cortes')
-        .select('*')
-        .eq('bodega_id', tiendaActual.id)
-        .order('fecha', { ascending: false })
-        .limit(1)
-        .single()
+    if (errMov) {
+      console.error('Error cargando movimientos:', errMov)
+    }
 
-      if (corte) {
-        const { data: detalles } = await supabase
-          .from('detalle_cortes')
-          .select('diferencia')
-          .eq('corte_id', corte.id)
+    let entradas = 0, salidas = 0, traslados = 0
+    const movsDiaMap: Record<string, any> = {}
+    movimientos?.forEach((m: any) => {
+      const dia = new Date(m.fecha).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })
+      if (!movsDiaMap[dia]) movsDiaMap[dia] = { dia, Entradas: 0, Salidas: 0, Traslados: 0 }
+      if (m.tipo === 'entrada') { entradas += m.cantidad; movsDiaMap[dia].Entradas += m.cantidad }
+      if (m.tipo === 'salida') { salidas += m.cantidad; movsDiaMap[dia].Salidas += m.cantidad }
+      if (m.tipo === 'traslado') { traslados += m.cantidad; movsDiaMap[dia].Traslados += m.cantidad }
+    })
 
-        let faltantes = 0, sobrantes = 0, sinDif = 0
-        detalles?.forEach((d: any) => {
-          if (d.diferencia < 0) faltantes += Math.abs(d.diferencia)
-          else if (d.diferencia > 0) sobrantes += d.diferencia
-          else sinDif++
-        })
-        setUltimoCorteInfo({ ...corte, faltantes, sobrantes, sinDif })
-      } else {
-        setUltimoCorteInfo(null)
+    setTotalMovimientos({ entradas, salidas, traslados })
+    setMovimientosPorDia(Object.values(movsDiaMap))
+    setKpis(prev => ({ ...prev, movimientosPeriodo: movimientos?.length || 0 }))
+
+    // 4. Último corte (usando cortes + cortes_detalle)
+    const { data: corte, error: errCorte } = await supabase
+      .from('cortes')
+      .select('*')
+      .eq('bodega_id', tiendaActual.id)
+      .order('fecha', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (errCorte) {
+      console.error('Error cargando último corte:', errCorte)
+    }
+
+    if (corte) {
+      const { data: detalles, error: errDet } = await supabase
+        .from('cortes_detalle')
+        .select('diferencia')
+        .eq('corte_id', corte.id)
+
+      if (errDet) {
+        console.error('Error cargando detalle de corte:', errDet)
       }
 
-      // 5. Productos con mayor movimiento
-      const { data: topMovs } = await supabase
-        .from('movimientos')
-        .select('productos(nombre), cantidad')
-        .or(`bodega_origen_id.eq.${tiendaActual.id},bodega_destino_id.eq.${tiendaActual.id}`)
-        .gte('fecha', fechaInicio.toISOString())
-
-      const prodMap: Record<string, number> = {}
-      topMovs?.forEach((m: any) => {
-        const nombre = m.productos?.nombre || 'Producto'
-        prodMap[nombre] = (prodMap[nombre] || 0) + m.cantidad
+      let faltantes = 0, sobrantes = 0, sinDif = 0
+      detalles?.forEach((d: any) => {
+        if (d.diferencia < 0) faltantes += Math.abs(d.diferencia)
+        else if (d.diferencia > 0) sobrantes += d.diferencia
+        else sinDif++
       })
-      setProductosMayorMov(Object.entries(prodMap).map(([nombre, movimientos]) => ({ nombre, movimientos })).sort((a, b) => b.movimientos - a.movimientos).slice(0, 5))
-
-      // 6. Pedidos que requieren atención
-      const { data: pedidos } = await supabase
-        .from('pedidos')
-        .select('id, estado, fecha')
-        .eq('bodega_id', tiendaActual.id)
-        .in('estado', ['pendiente', 'aprobado_bodega', 'por_despachar'])
-        .order('fecha', { ascending: true })
-        .limit(5)
-      setPedidosAtencion(pedidos || [])
-
-      // 7. Actividad reciente
-      const { data: actividad } = await supabase
-        .from('movimientos')
-        .select('tipo, cantidad, fecha, productos(nombre)')
-        .or(`bodega_origen_id.eq.${tiendaActual.id},bodega_destino_id.eq.${tiendaActual.id}`)
-        .order('fecha', { ascending: false })
-        .limit(6)
-      setActividadReciente(actividad || [])
-
-    } catch (e) {
-      console.error(e)
-    } finally {
-      setLoading(false)
+      setUltimoCorteInfo({ ...corte, faltantes, sobrantes, sinDif })
+    } else {
+      setUltimoCorteInfo(null)
     }
+
+    // 5. Productos con mayor movimiento
+    const { data: topMovs, error: errTop } = await supabase
+      .from('movimientos')
+      .select('productos(nombre), cantidad')
+      .eq('bodega_id', tiendaActual.id)
+      .gte('fecha', fechaInicio.toISOString())
+
+    if (errTop) {
+      console.error('Error cargando top productos:', errTop)
+    }
+
+    const prodMap: Record<string, number> = {}
+    topMovs?.forEach((m: any) => {
+      const nombre = m.productos?.nombre || 'Producto'
+      prodMap[nombre] = (prodMap[nombre] || 0) + m.cantidad
+    })
+    setProductosMayorMov(Object.entries(prodMap).map(([nombre, movimientos]) => ({ nombre, movimientos })).sort((a, b) => b.movimientos - a.movimientos).slice(0, 5))
+
+    // 6. Pedidos que requieren atención
+    const { data: pedidos, error: errPed } = await supabase
+      .from('pedidos')
+      .select('id, estado, fecha')
+      .eq('bodega_id', tiendaActual.id)
+      .in('estado', ['pendiente', 'aprobado_bodega', 'aprobado_cartera'])
+      .order('fecha', { ascending: true })
+      .limit(5)
+
+    if (errPed) {
+      console.error('Error cargando pedidos:', errPed)
+    }
+    setPedidosAtencion(pedidos || [])
+
+    // 7. Actividad reciente
+    const { data: actividad, error: errAct } = await supabase
+      .from('movimientos')
+      .select('tipo, cantidad, fecha, productos(nombre)')
+      .eq('bodega_id', tiendaActual.id)
+      .order('fecha', { ascending: false })
+      .limit(6)
+
+    if (errAct) {
+      console.error('Error cargando actividad:', errAct)
+    }
+    setActividadReciente(actividad || [])
+
+    setLoading(false)
   }, [tiendaActual?.id, periodo])
 
   useEffect(() => {
@@ -176,15 +208,20 @@ export default function EstadisticasPage() {
             <button
               key={p}
               onClick={() => setPeriodo(p)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                periodo === p ? 'bg-[#1A0087] text-white' : 'text-gray-600 hover:bg-gray-100'
-              }`}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${periodo === p ? 'bg-[#1A0087] text-white' : 'text-gray-600 hover:bg-gray-100'
+                }`}
             >
               {p} días
             </button>
           ))}
         </div>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm">
+          ❌ {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-20">
@@ -245,7 +282,7 @@ export default function EstadisticasPage() {
             <div className="flex justify-between mb-4">
               <span className="text-sm text-green-600">🟢 Entradas: {formatNum(totalMovimientos.entradas)}</span>
               <span className="text-sm text-red-600">🔴 Salidas: {formatNum(totalMovimientos.salidas)}</span>
-              <span className="text-sm text-blue-600">🔵 Transf: {formatNum(totalMovimientos.transferencias)}</span>
+              <span className="text-sm text-blue-600">🔵 Traslados: {formatNum(totalMovimientos.traslados)}</span>
             </div>
             {movimientosPorDia.length === 0 ? (
               <p className="text-gray-400 text-sm">Sin movimientos recientes</p>
@@ -259,7 +296,7 @@ export default function EstadisticasPage() {
                   <Legend />
                   <Line type="monotone" dataKey="Entradas" stroke="#10b981" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="Salidas" stroke="#ef4444" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="Transferencias" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="Traslados" stroke="#3b82f6" strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             )}
@@ -337,11 +374,10 @@ export default function EstadisticasPage() {
               <div className="relative border-l-2 border-gray-200 ml-3 space-y-4">
                 {actividadReciente.map((act, i) => (
                   <div key={i} className="relative pl-6">
-                    <div className={`absolute -left-[7px] top-0 w-3 h-3 rounded-full border-2 border-white ${
-                      act.tipo === 'entrada' ? 'bg-green-500' : act.tipo === 'salida' ? 'bg-red-500' : 'bg-blue-500'
-                    }`}></div>
+                    <div className={`absolute -left-[7px] top-0 w-3 h-3 rounded-full border-2 border-white ${act.tipo === 'entrada' ? 'bg-green-500' : act.tipo === 'salida' ? 'bg-red-500' : 'bg-blue-500'
+                      }`}></div>
                     <p className="text-sm text-gray-700 font-medium">
-                      {act.tipo === 'entrada' ? '🟢 Entrada' : act.tipo === 'salida' ? '🔴 Salida' : '🔵 Transferencia'} de {act.cantidad} unid.
+                      {act.tipo === 'entrada' ? '🟢 Entrada' : act.tipo === 'salida' ? '🔴 Salida' : '🔵 Traslado'} de {act.cantidad} unid.
                     </p>
                     <p className="text-xs text-gray-400">{act.productos?.nombre}</p>
                     <p className="text-xs text-gray-400 mt-1">

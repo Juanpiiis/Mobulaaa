@@ -46,6 +46,36 @@ export interface DiferenciaItem {
 }
 
 // ─────────────────────────────────────────────────────
+// Normalización de referencias
+// trim + colapso de espacios internos + MAYÚSCULAS
+// ─────────────────────────────────────────────────────
+function normalizarReferencia(s: string | null | undefined): string {
+    if (s == null) return ''
+    return s.trim().replace(/\s+/g, ' ').toUpperCase()
+}
+
+// ─────────────────────────────────────────────────────
+// Helper de paginación
+// ─────────────────────────────────────────────────────
+async function traerTodo<T>(
+    buildQuery: () => any,
+    pageSize = 1000
+): Promise<T[]> {
+    const out: T[] = []
+    let from = 0
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+        const { data, error } = await buildQuery().range(from, from + pageSize - 1)
+        if (error) throw new Error(error.message)
+        const chunk = (data || []) as T[]
+        out.push(...chunk)
+        if (chunk.length < pageSize) break
+        from += pageSize
+    }
+    return out
+}
+
+// ─────────────────────────────────────────────────────
 // Parsear el Excel
 // ─────────────────────────────────────────────────────
 export async function parsearExcel(file: File): Promise<FilaExcel[]> {
@@ -84,7 +114,7 @@ export async function parsearExcel(file: File): Promise<FilaExcel[]> {
         const row = rows[i]
         if (!row || row.length === 0) continue
 
-        const referencia = String(row[idx.referencia] || '').trim()
+        const referencia = normalizarReferencia(String(row[idx.referencia] || ''))
         const cantidadRaw = row[idx.cantidad]
         const cantidad = typeof cantidadRaw === 'number' ? cantidadRaw : parseInt(String(cantidadRaw || '0'))
 
@@ -116,6 +146,21 @@ export async function parsearExcel(file: File): Promise<FilaExcel[]> {
         throw new Error('El archivo no contiene productos válidos')
     }
 
+    // Detectar duplicados por referencia normalizada
+    const vistos = new Set<string>()
+    const duplicados = new Set<string>()
+    for (const f of filas) {
+        if (vistos.has(f.referencia)) duplicados.add(f.referencia)
+        vistos.add(f.referencia)
+    }
+    if (duplicados.size > 0) {
+        const lista = Array.from(duplicados).slice(0, 10).join(', ')
+        const sufijo = duplicados.size > 10 ? ` (y ${duplicados.size - 10} más)` : ''
+        throw new Error(
+            `El Excel tiene referencias duplicadas: ${lista}${sufijo}. Corrige el archivo y vuelve a subirlo.`
+        )
+    }
+
     return filas
 }
 
@@ -127,35 +172,49 @@ export async function compararConUltimoCorte(
     filas: FilaExcel[],
     bodegaId: string
 ): Promise<DiferenciaItem[]> {
-    // 1. Productos
-    const { data: productosBD, error: errProd } = await supabase
-        .from('productos')
-        .select('id, nombre, referencia_excel, marca, categoria_excel, precio, precio_mayorista, precio_tat')
-        .not('referencia_excel', 'is', null)
+    // 1. Productos (paginado)
+    const productosBD = await traerTodo<any>(
+        () => supabase
+            .from('productos')
+            .select('id, nombre, referencia_excel, marca, categoria_excel, precio, precio_mayorista, precio_tat')
+            .not('referencia_excel', 'is', null)
+            .order('id', { ascending: true })
+    )
 
-    if (errProd) throw new Error('Error cargando productos: ' + errProd.message)
-
-    // 2. Inventario actual de la bodega
-    const { data: inventarioBD, error: errInv } = await supabase
-        .from('inventario')
-        .select('producto_id, cantidad_disponible')
-        .eq('bodega_id', bodegaId)
-
-    if (errInv) throw new Error('Error cargando inventario: ' + errInv.message)
+    // 2. Inventario actual de la bodega (paginado)
+    const inventarioBD = await traerTodo<{ producto_id: string; cantidad_disponible: number }>(
+        () => supabase
+            .from('inventario')
+            .select('producto_id, cantidad_disponible')
+            .eq('bodega_id', bodegaId)
+            .order('producto_id', { ascending: true })
+    )
 
     const invMap = new Map<string, number>()
-    for (const inv of inventarioBD || []) {
+    for (const inv of inventarioBD) {
         invMap.set(inv.producto_id, inv.cantidad_disponible)
     }
 
-    // 3. Mapa por referencia_excel
+    // 3. Mapa por referencia_excel normalizada (colapso de espacios)
+    //    Si hay colisiones (dos productos de BD que colapsan a la misma clave),
+    //    nos quedamos con el primero y avisamos por consola.
     const prodMap = new Map<string, ProductoBD>()
-    for (const p of productosBD || []) {
+    const colisiones = new Set<string>()
+
+    for (const p of productosBD) {
         if (!p.referencia_excel) continue
-        prodMap.set(p.referencia_excel, {
+        const refNorm = normalizarReferencia(p.referencia_excel)
+        if (!refNorm) continue
+
+        if (prodMap.has(refNorm)) {
+            colisiones.add(refNorm)
+            continue // nos quedamos con el primero
+        }
+
+        prodMap.set(refNorm, {
             id: p.id,
             nombre: p.nombre,
-            referencia_excel: p.referencia_excel,
+            referencia_excel: refNorm,
             marca: p.marca,
             categoria_excel: p.categoria_excel,
             precio: p.precio,
@@ -165,17 +224,26 @@ export async function compararConUltimoCorte(
         })
     }
 
+    if (colisiones.size > 0) {
+        console.warn(
+            '[cortes] Hay productos en BD cuya referencia_excel colisiona tras normalizar. ' +
+            'Se usará el primero de cada par. Referencias afectadas:',
+            Array.from(colisiones)
+        )
+    }
+
     const resultado: DiferenciaItem[] = []
     const referenciasEnExcel = new Set<string>()
 
     for (const fila of filas) {
-        referenciasEnExcel.add(fila.referencia)
-        const prod = prodMap.get(fila.referencia)
+        const refNorm = normalizarReferencia(fila.referencia)
+        referenciasEnExcel.add(refNorm)
+        const prod = prodMap.get(refNorm)
 
         if (!prod) {
             resultado.push({
                 producto_id: null,
-                referencia_excel: fila.referencia,
+                referencia_excel: refNorm,
                 marca: fila.marca,
                 categoria_excel: fila.categoria,
                 tipo_cambio: 'nuevo',
@@ -192,19 +260,15 @@ export async function compararConUltimoCorte(
             continue
         }
 
+        // Decisión CONTEXTO: 'modificado' SOLO por diferencia de cantidad.
         const cantCambio = prod.cantidad_actual !== fila.cantidad
-        const precioUniCambio = prod.precio !== fila.precio_unidad
-        const precioMayCambio = prod.precio_mayorista !== fila.precio_mayorista
-        const precioTatCambio = prod.precio_tat !== fila.precio_tat
-
-        const hayCambio = cantCambio || precioUniCambio || precioMayCambio || precioTatCambio
 
         resultado.push({
             producto_id: prod.id,
-            referencia_excel: fila.referencia,
+            referencia_excel: refNorm,
             marca: fila.marca,
             categoria_excel: fila.categoria,
-            tipo_cambio: hayCambio ? 'modificado' : 'sin_cambio',
+            tipo_cambio: cantCambio ? 'modificado' : 'sin_cambio',
             cantidad_anterior: prod.cantidad_actual,
             cantidad_nueva: fila.cantidad,
             diferencia: fila.cantidad - prod.cantidad_actual,
@@ -260,6 +324,10 @@ export async function crearCorte(
         notas?: string
     }
 ): Promise<{ ok: boolean; corteId?: string; error?: string }> {
+    if (!diferencias.length) {
+        return { ok: false, error: 'El Excel no produjo diferencias (revisa el archivo o la bodega seleccionada).' }
+    }
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { ok: false, error: 'No autenticado' }
 
@@ -330,7 +398,7 @@ export async function crearCorte(
 }
 
 // ─────────────────────────────────────────────────────
-// Aplicar corte (recibe supabase)
+// Aplicar corte (recibe supabase) — una sola llamada al rpc
 // ─────────────────────────────────────────────────────
 export async function aplicarCorteAlInventario(
     supabase: any,
@@ -339,160 +407,17 @@ export async function aplicarCorteAlInventario(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return { ok: false, error: 'No autenticado' }
 
-    const { data: corte, error: errCorte } = await supabase
-        .from('cortes')
-        .select('id, bodega_id, aplicado, revertido')
-        .eq('id', corteId)
-        .single()
+    const { data, error } = await supabase.rpc('aplicar_corte', { p_corte: corteId })
 
-    if (errCorte || !corte) return { ok: false, error: 'Corte no encontrado' }
-    if (corte.aplicado) return { ok: false, error: 'Este corte ya fue aplicado' }
-    if (corte.revertido) return { ok: false, error: 'Este corte ya fue revertido' }
-
-    const { data: detalle, error: errDetalle } = await supabase
-        .from('cortes_detalle')
-        .select('*')
-        .eq('corte_id', corteId)
-
-    if (errDetalle || !detalle) return { ok: false, error: 'Error cargando detalle' }
-
-    let movimientosCreados = 0
-
-    for (const d of detalle) {
-        if (d.tipo_cambio === 'sin_cambio') continue
-
-        if (d.tipo_cambio === 'nuevo') {
-            const { data: nuevoProd, error: errNuevo } = await supabase
-                .from('productos')
-                .insert({
-                    nombre: d.referencia_excel,
-                    referencia_excel: d.referencia_excel,
-                    marca: d.marca,
-                    categoria_excel: d.categoria_excel,
-                    precio: d.precio_unidad_nuevo,
-                    precio_mayorista: d.precio_mayorista_nuevo,
-                    precio_tat: d.precio_tat_nuevo,
-                    activo: true,
-                })
-                .select('id')
-                .single()
-
-            if (errNuevo || !nuevoProd) {
-                console.error('Error creando producto nuevo:', errNuevo)
-                continue
-            }
-
-            await supabase.from('inventario').insert({
-                producto_id: nuevoProd.id,
-                bodega_id: corte.bodega_id,
-                cantidad_disponible: d.cantidad_nueva,
-                cantidad_minima: 0,
-            })
-
-            await supabase.from('movimientos').insert({
-                producto_id: nuevoProd.id,
-                bodega_destino_id: corte.bodega_id,
-                cantidad: d.cantidad_nueva,
-                tipo: 'entrada',
-                usuario_id: user.id,
-                observacion: `Alta por corte de inventario`,
-            })
-            movimientosCreados++
-            continue
-        }
-
-        if (d.tipo_cambio === 'modificado' && d.producto_id) {
-            const { data: inv } = await supabase
-                .from('inventario')
-                .select('id, cantidad_disponible')
-                .eq('producto_id', d.producto_id)
-                .eq('bodega_id', corte.bodega_id)
-                .maybeSingle()
-
-            if (inv) {
-                await supabase
-                    .from('inventario')
-                    .update({ cantidad_disponible: d.cantidad_nueva })
-                    .eq('id', inv.id)
-            } else {
-                await supabase.from('inventario').insert({
-                    producto_id: d.producto_id,
-                    bodega_id: corte.bodega_id,
-                    cantidad_disponible: d.cantidad_nueva,
-                    cantidad_minima: 0,
-                })
-            }
-
-            if (
-                d.precio_unidad_nuevo !== d.precio_unidad_anterior ||
-                d.precio_mayorista_nuevo !== d.precio_mayorista_anterior ||
-                d.precio_tat_nuevo !== d.precio_tat_anterior
-            ) {
-                await supabase
-                    .from('productos')
-                    .update({
-                        precio: d.precio_unidad_nuevo,
-                        precio_mayorista: d.precio_mayorista_nuevo,
-                        precio_tat: d.precio_tat_nuevo,
-                    })
-                    .eq('id', d.producto_id)
-            }
-
-            if (d.diferencia && d.diferencia !== 0) {
-                await supabase.from('movimientos').insert({
-                    producto_id: d.producto_id,
-                    bodega_destino_id: corte.bodega_id,
-                    cantidad: Math.abs(d.diferencia),
-                    tipo: d.diferencia > 0 ? 'entrada' : 'salida',
-                    usuario_id: user.id,
-                    observacion: `Ajuste por corte de inventario`,
-                })
-                movimientosCreados++
-            }
-            continue
-        }
-
-        if (d.tipo_cambio === 'ausente' && d.producto_id) {
-            const { data: inv } = await supabase
-                .from('inventario')
-                .select('id, cantidad_disponible')
-                .eq('producto_id', d.producto_id)
-                .eq('bodega_id', corte.bodega_id)
-                .maybeSingle()
-
-            if (inv && inv.cantidad_disponible > 0) {
-                await supabase
-                    .from('inventario')
-                    .update({ cantidad_disponible: 0 })
-                    .eq('id', inv.id)
-
-                await supabase.from('movimientos').insert({
-                    producto_id: d.producto_id,
-                    bodega_origen_id: corte.bodega_id,
-                    cantidad: inv.cantidad_disponible,
-                    tipo: 'salida',
-                    usuario_id: user.id,
-                    observacion: `Ausente en corte de inventario`,
-                })
-                movimientosCreados++
-            }
-        }
+    if (error) {
+        return { ok: false, error: error.message }
     }
 
-    await supabase
-        .from('cortes')
-        .update({
-            aplicado: true,
-            aplicado_en: new Date().toISOString(),
-            aplicado_por: user.id,
-        })
-        .eq('id', corteId)
-
-    return { ok: true, movimientos: movimientosCreados }
+    return { ok: true, movimientos: typeof data === 'number' ? data : 0 }
 }
 
 // ─────────────────────────────────────────────────────
-// Revertir corte (recibe supabase)
+// Revertir corte (recibe supabase) — sin cambios
 // ─────────────────────────────────────────────────────
 export async function revertirCorte(
     supabase: any,

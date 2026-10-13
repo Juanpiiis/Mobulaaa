@@ -8,7 +8,8 @@ import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
   ArrowsRightLeftIcon,
-  ClockIcon
+  ClockIcon,
+  AdjustmentsHorizontalIcon,
 } from '@heroicons/react/24/outline'
 
 interface Movimiento {
@@ -16,60 +17,100 @@ interface Movimiento {
   tipo: string
   cantidad: number
   fecha: string
+  stock_anterior: number | null
+  stock_nuevo: number | null
   productos: { nombre: string } | null
+  bodega_id: string | null
   bodega_origen_id: string | null
   bodega_destino_id: string | null
 }
+
+const TIPOS_VALIDOS = ['entrada', 'salida', 'traslado', 'ajuste']
 
 export default function MovimientosPage() {
   const { tiendaActual } = useTienda()
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [movimientos, setMovimientos] = useState<Movimiento[]>([])
   const [totalEntradas, setTotalEntradas] = useState(0)
   const [totalSalidas, setTotalSalidas] = useState(0)
-  const [totalTransferencias, setTotalTransferencias] = useState(0)
+  const [totalTraslados, setTotalTraslados] = useState(0)
+  const [totalAjustes, setTotalAjustes] = useState(0)
   const [periodo, setPeriodo] = useState('30')
 
   const fetchMovimientos = async () => {
     if (!tiendaActual) return
     setLoading(true)
+    setError('')
 
-    try {
-      const fechaInicio = new Date()
-      fechaInicio.setDate(fechaInicio.getDate() - parseInt(periodo))
+    const fechaInicio = new Date()
+    fechaInicio.setDate(fechaInicio.getDate() - parseInt(periodo))
 
-      const { data } = await supabase
-        .from('movimientos')
-        .select('*')
-        .or(`bodega_origen_id.eq.${tiendaActual.id},bodega_destino_id.eq.${tiendaActual.id}`)
-        .gte('fecha', fechaInicio.toISOString())
-        .order('fecha', { ascending: false })
-        .limit(50)
+    const { data, error: err } = await supabase
+      .from('movimientos')
+      .select(`
+        id, tipo, cantidad, fecha, stock_anterior, stock_nuevo,
+        bodega_id, bodega_origen_id, bodega_destino_id,
+        productos(nombre)
+      `)
+      .eq('bodega_id', tiendaActual.id)
+      .gte('fecha', fechaInicio.toISOString())
+      .order('fecha', { ascending: false })
+      .limit(200)
 
-      setMovimientos(data || [])
-
-      // Calcular totales
-      let entradas = 0, salidas = 0, transferencias = 0
-        ; (data || []).forEach((m: any) => {
-          if (m.tipo === 'entrada') entradas += m.cantidad
-          if (m.tipo === 'salida') salidas += m.cantidad
-          if (m.tipo === 'transferencia') transferencias += m.cantidad
-        })
-      setTotalEntradas(entradas)
-      setTotalSalidas(salidas)
-      setTotalTransferencias(transferencias)
-    } catch (e) {
-      console.error(e)
-    } finally {
+    if (err) {
+      console.error('Error cargando movimientos:', err)
+      setError('No se pudieron cargar los movimientos: ' + err.message)
+      setMovimientos([])
       setLoading(false)
+      return
     }
+
+    const lista = (data || []) as unknown as Movimiento[]
+    setMovimientos(lista)
+
+    let entradas = 0, salidas = 0, traslados = 0, ajustes = 0
+    lista.forEach((m) => {
+      if (m.tipo === 'entrada') entradas += m.cantidad
+      else if (m.tipo === 'salida') salidas += m.cantidad
+      else if (m.tipo === 'traslado') traslados += m.cantidad
+      else if (m.tipo === 'ajuste') ajustes += m.cantidad
+    })
+    setTotalEntradas(entradas)
+    setTotalSalidas(salidas)
+    setTotalTraslados(traslados)
+    setTotalAjustes(ajustes)
+    setLoading(false)
   }
 
   useEffect(() => {
     if (!tiendaActual) return
     fetchMovimientos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tiendaActual?.id, periodo])
+
+  const renderStock = (m: Movimiento) => {
+    if (m.stock_anterior === null || m.stock_nuevo === null) return '—'
+    return `${formatNum(m.stock_anterior)} → ${formatNum(m.stock_nuevo)}`
+  }
+
+  const renderTipoBadge = (tipo: string) => {
+    const base = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold'
+    if (tipo === 'entrada') return <span className={`${base} bg-green-100 text-green-700`}><ArrowDownTrayIcon className="w-3 h-3" />entrada</span>
+    if (tipo === 'salida') return <span className={`${base} bg-red-100 text-red-700`}><ArrowUpTrayIcon className="w-3 h-3" />salida</span>
+    if (tipo === 'traslado') return <span className={`${base} bg-blue-100 text-blue-700`}><ArrowsRightLeftIcon className="w-3 h-3" />traslado</span>
+    if (tipo === 'ajuste') return <span className={`${base} bg-purple-100 text-purple-700`}><AdjustmentsHorizontalIcon className="w-3 h-3" />ajuste</span>
+    return <span className={`${base} bg-gray-100 text-gray-700`}>{tipo}</span>
+  }
+
+  const renderTipoColor = (tipo: string) => {
+    if (tipo === 'entrada') return 'text-green-600'
+    if (tipo === 'salida') return 'text-red-600'
+    if (tipo === 'traslado') return 'text-blue-600'
+    if (tipo === 'ajuste') return 'text-purple-600'
+    return 'text-gray-600'
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -83,8 +124,7 @@ export default function MovimientosPage() {
             <button
               key={p}
               onClick={() => setPeriodo(p)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${periodo === p ? 'bg-[#1A0087] text-white' : 'text-gray-600 hover:bg-gray-100'
-                }`}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${periodo === p ? 'bg-[#1A0087] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
             >
               {p} días
             </button>
@@ -92,8 +132,14 @@ export default function MovimientosPage() {
         </div>
       </div>
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm">
+          ❌ {error}
+        </div>
+      )}
+
       {/* Totales */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-6 rounded-xl shadow-sm border border-green-100 flex items-center gap-4">
           <div className="p-3 rounded-xl bg-green-50">
             <ArrowDownTrayIcon className="w-6 h-6 text-green-600" />
@@ -117,68 +163,68 @@ export default function MovimientosPage() {
             <ArrowsRightLeftIcon className="w-6 h-6 text-blue-600" />
           </div>
           <div>
-            <p className="text-sm text-gray-500">Transferencias</p>
-            <p className="text-2xl font-bold text-blue-600">{formatNum(totalTransferencias)}</p>
+            <p className="text-sm text-gray-500">Traslados</p>
+            <p className="text-2xl font-bold text-blue-600">{formatNum(totalTraslados)}</p>
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-purple-100 flex items-center gap-4">
+          <div className="p-3 rounded-xl bg-purple-50">
+            <AdjustmentsHorizontalIcon className="w-6 h-6 text-purple-600" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Ajustes</p>
+            <p className="text-2xl font-bold text-purple-600">{formatNum(totalAjustes)}</p>
           </div>
         </div>
       </div>
 
-      {/* Lista de movimientos */}
+      {/* Lista */}
       {loading ? (
         <div className="flex justify-center py-20">
           <div className="w-10 h-10 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin"></div>
         </div>
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Fecha</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Tipo</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Producto</th>
-                <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Cantidad</th>
-              </tr>
-            </thead>
-            <tbody>
-              {movimientos.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center">
-                    <div className="flex flex-col items-center">
-                      <ClockIcon className="w-12 h-12 text-gray-300 mb-3" />
-                      <p className="text-gray-500 font-medium">Sin movimientos recientes</p>
-                      <p className="text-gray-400 text-sm">No hay registros en el período seleccionado</p>
-                    </div>
-                  </td>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Fecha</th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Tipo</th>
+                  <th className="text-left px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Producto</th>
+                  <th className="text-right px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Cantidad</th>
+                  <th className="text-right px-6 py-4 text-xs font-semibold text-gray-500 uppercase">Stock</th>
                 </tr>
-              ) : (
-                movimientos.map(m => (
-                  <tr key={m.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                    <td className="px-6 py-4 text-gray-600">{formatDateShort(m.fecha)}</td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${m.tipo === 'entrada' ? 'bg-green-100 text-green-700' :
-                          m.tipo === 'salida' ? 'bg-red-100 text-red-700' :
-                            'bg-blue-100 text-blue-700'
-                        }`}>
-                        {m.tipo === 'entrada' ? <ArrowDownTrayIcon className="w-3 h-3" /> :
-                          m.tipo === 'salida' ? <ArrowUpTrayIcon className="w-3 h-3" /> :
-                            <ArrowsRightLeftIcon className="w-3 h-3" />}
-                        {m.tipo}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 font-medium text-gray-800">{m.productos?.nombre || '—'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`font-semibold ${m.tipo === 'entrada' ? 'text-green-600' :
-                          m.tipo === 'salida' ? 'text-red-600' :
-                            'text-blue-600'
-                        }`}>
-                        {formatNum(m.cantidad)}
-                      </span>
+              </thead>
+              <tbody>
+                {movimientos.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center">
+                        <ClockIcon className="w-12 h-12 text-gray-300 mb-3" />
+                        <p className="text-gray-500 font-medium">Sin movimientos recientes</p>
+                        <p className="text-gray-400 text-sm">No hay registros en el período seleccionado</p>
+                      </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  movimientos.map(m => (
+                    <tr key={m.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4 text-gray-600 whitespace-nowrap">{formatDateShort(m.fecha)}</td>
+                      <td className="px-6 py-4">{renderTipoBadge(m.tipo)}</td>
+                      <td className="px-6 py-4 font-medium text-gray-800">{m.productos?.nombre || '—'}</td>
+                      <td className={`px-6 py-4 text-right font-semibold ${renderTipoColor(m.tipo)}`}>
+                        {formatNum(m.cantidad)}
+                      </td>
+                      <td className="px-6 py-4 text-right text-sm text-gray-600 font-mono whitespace-nowrap">
+                        {renderStock(m)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

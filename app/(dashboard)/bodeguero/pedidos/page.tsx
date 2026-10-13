@@ -75,6 +75,7 @@ export default function PedidosBodegueroPage() {
   const [abrirEnEdicion, setAbrirEnEdicion] = useState(false)
   const [verCotizacion, setVerCotizacion] = useState<string | null>(null)
   const [procesando, setProcesando] = useState<string | null>(null)
+  const [errorAccion, setErrorAccion] = useState('')
 
   const [modalDespacho, setModalDespacho] = useState<string | null>(null)
   const [cantidadesDespacho, setCantidadesDespacho] = useState<Record<string, number>>({})
@@ -129,17 +130,37 @@ export default function PedidosBodegueroPage() {
   const handleAprobarBodega = async (pedidoId: string) => {
     if (procesando) return
     setProcesando(pedidoId)
-    const { error } = await supabase.from('pedidos').update({ estado: 'aprobado_bodega' }).eq('id', pedidoId)
-    if (!error) {
-      const { registrarCambioHistorial } = await import('@/lib/utils/historial')
-      await registrarCambioHistorial({
-        pedidoId,
-        accion: 'aprobado_bodega',
-        estadoAnterior: 'pendiente',
-        estadoNuevo: 'aprobado_bodega',
-        observacion: 'Pedido aprobado por bodega',
-      })
+    setErrorAccion('')
+
+    const { data, error } = await supabase
+      .from('pedidos')
+      .update({ estado: 'aprobado_bodega' })
+      .eq('id', pedidoId)
+      .eq('estado', 'pendiente')
+      .select('id')
+
+    if (error) {
+      console.error('Error aprobando pedido:', error)
+      setErrorAccion('No se pudo aprobar el pedido: ' + error.message)
+      setProcesando(null)
+      return
     }
+    if (!data || data.length === 0) {
+      setErrorAccion('El pedido ya no está pendiente. Recarga la página.')
+      setProcesando(null)
+      fetchOrders()
+      return
+    }
+
+    const { registrarCambioHistorial } = await import('@/lib/utils/historial')
+    await registrarCambioHistorial({
+      pedidoId,
+      accion: 'aprobado_bodega',
+      estadoAnterior: 'pendiente',
+      estadoNuevo: 'aprobado_bodega',
+      observacion: 'Pedido aprobado por bodega',
+    })
+
     setProcesando(null)
     fetchOrders()
   }
@@ -147,17 +168,37 @@ export default function PedidosBodegueroPage() {
   const handleRechazarBodega = async (pedidoId: string) => {
     if (procesando) return
     setProcesando(pedidoId)
-    const { error } = await supabase.from('pedidos').update({ estado: 'rechazado_bodega' }).eq('id', pedidoId)
-    if (!error) {
-      const { registrarCambioHistorial } = await import('@/lib/utils/historial')
-      await registrarCambioHistorial({
-        pedidoId,
-        accion: 'rechazado_bodega',
-        estadoAnterior: 'pendiente',
-        estadoNuevo: 'rechazado_bodega',
-        observacion: 'Pedido rechazado por bodega',
-      })
+    setErrorAccion('')
+
+    const { data, error } = await supabase
+      .from('pedidos')
+      .update({ estado: 'rechazado_bodega' })
+      .eq('id', pedidoId)
+      .eq('estado', 'pendiente')
+      .select('id')
+
+    if (error) {
+      console.error('Error rechazando pedido:', error)
+      setErrorAccion('No se pudo rechazar el pedido: ' + error.message)
+      setProcesando(null)
+      return
     }
+    if (!data || data.length === 0) {
+      setErrorAccion('El pedido ya no está pendiente. Recarga la página.')
+      setProcesando(null)
+      fetchOrders()
+      return
+    }
+
+    const { registrarCambioHistorial } = await import('@/lib/utils/historial')
+    await registrarCambioHistorial({
+      pedidoId,
+      accion: 'rechazado_bodega',
+      estadoAnterior: 'pendiente',
+      estadoNuevo: 'rechazado_bodega',
+      observacion: 'Pedido rechazado por bodega',
+    })
+
     setProcesando(null)
     fetchOrders()
   }
@@ -168,56 +209,35 @@ export default function PedidosBodegueroPage() {
       inicial[d.id] = d.cantidad_aprobada ?? d.cantidad_solicitada
     })
     setCantidadesDespacho(inicial)
+    setErrorAccion('')
     setModalDespacho(pedido.id)
   }
 
   const confirmarDespacho = async (pedido: Pedido) => {
     if (procesando) return
     setProcesando(pedido.id)
-    const { data: { user } } = await supabase.auth.getUser()
+    setErrorAccion('')
 
-    for (const d of pedido.detalle_pedido) {
-      const cantidad = cantidadesDespacho[d.id] || 0
-      await supabase.from('detalle_pedido').update({ cantidad_aprobada: cantidad }).eq('id', d.id)
+    // Construir p_cantidades: solo los detalles con cantidad > 0 o todos.
+    // El rpc valida 0 <= cantidad <= cantidad_solicitada y ajusta stock por los > 0.
+    const p_cantidades = pedido.detalle_pedido.map(d => ({
+      detalle_id: d.id,
+      cantidad: cantidadesDespacho[d.id] ?? 0,
+    }))
 
-      if (cantidad > 0) {
-        await supabase.from('movimientos').insert({
-          producto_id: d.productos.id,
-          bodega_origen_id: pedido.bodegas?.id,
-          cantidad,
-          tipo: 'salida',
-          usuario_id: user?.id,
-          fecha: new Date().toISOString(),
-          observacion: `Despacho ${pedido.numero_factura || String(pedido.id).slice(0, 8)}`,
-        })
-        const { data: inv } = await supabase
-          .from('inventario')
-          .select('id, cantidad_disponible')
-          .eq('producto_id', d.productos.id)
-          .eq('bodega_id', pedido.bodegas?.id)
-          .single()
-        if (inv) {
-          await supabase
-            .from('inventario')
-            .update({ cantidad_disponible: Math.max(0, inv.cantidad_disponible - cantidad) })
-            .eq('id', inv.id)
-        }
-      }
-    }
-
-    await supabase.from('pedidos').update({ estado: 'despachado', revertido: false }).eq('id', pedido.id)
-
-    const { registrarCambioHistorial } = await import('@/lib/utils/historial')
-    await registrarCambioHistorial({
-      pedidoId: pedido.id,
-      accion: 'despachado',
-      estadoAnterior: 'aprobado_cartera',
-      estadoNuevo: 'despachado',
-      observacion: pedido.revertido
-        ? `Re-despacho después de reversión (${pedido.detalle_pedido.length} productos)`
-        : `Despacho de ${pedido.detalle_pedido.length} productos`,
+    const { error: errRpc } = await supabase.rpc('despachar_pedido', {
+      p_pedido: pedido.id,
+      p_cantidades,
     })
 
+    if (errRpc) {
+      console.error('Error despachando pedido:', errRpc)
+      setErrorAccion('No se pudo despachar: ' + errRpc.message)
+      setProcesando(null)
+      return
+    }
+
+    // El rpc ya insertó la fila en pedidos_historial. No duplicar aquí.
     setProcesando(null)
     setModalDespacho(null)
     fetchOrders()
@@ -226,7 +246,28 @@ export default function PedidosBodegueroPage() {
   const marcarEntregado = async (pedidoId: string) => {
     if (procesando) return
     setProcesando(pedidoId)
-    await supabase.from('pedidos').update({ estado: 'entregado' }).eq('id', pedidoId)
+    setErrorAccion('')
+
+    const { data, error } = await supabase
+      .from('pedidos')
+      .update({ estado: 'entregado' })
+      .eq('id', pedidoId)
+      .eq('estado', 'despachado')
+      .select('id')
+
+    if (error) {
+      console.error('Error marcando entregado:', error)
+      setErrorAccion('No se pudo marcar como entregado: ' + error.message)
+      setProcesando(null)
+      return
+    }
+    if (!data || data.length === 0) {
+      setErrorAccion('El pedido ya no está en estado despachado. Recarga la página.')
+      setProcesando(null)
+      fetchOrders()
+      return
+    }
+
     const { registrarCambioHistorial } = await import('@/lib/utils/historial')
     await registrarCambioHistorial({
       pedidoId,
@@ -235,6 +276,7 @@ export default function PedidosBodegueroPage() {
       estadoNuevo: 'entregado',
       observacion: 'Pedido entregado al cliente',
     })
+
     setProcesando(null)
     fetchOrders()
   }
@@ -474,6 +516,17 @@ export default function PedidosBodegueroPage() {
             Filtros
           </button>
         </div>
+
+        {errorAccion && (
+          <div className="border-t border-red-100 bg-red-50">
+            <div className="w-full px-4 sm:px-6 py-2 text-sm text-red-700 flex items-center justify-between gap-3">
+              <span>❌ {errorAccion}</span>
+              <button onClick={() => setErrorAccion('')} className="text-red-700 hover:text-red-900 text-xs font-medium">
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
 
         {(filtros.busqueda.trim() || filtros.fecha !== 'todo' || filtros.estado !== 'todos' || filtros.extra !== 'todos') && (
           <div className="border-t border-gray-100 bg-white">
