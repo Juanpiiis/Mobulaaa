@@ -10,6 +10,7 @@ import {
   FiltrosModal,
   FiltrosChips,
   FILTROS_INICIALES,
+  ESTADOS_POR_ROL,
   type FiltrosValores,
 } from '@/components/pedidos/FiltrosModal'
 import {
@@ -51,7 +52,6 @@ export default function PedidosBodegueroPage() {
   const [procesando, setProcesando] = useState<string | null>(null)
   const [errorAccion, setErrorAccion] = useState('')
 
-  // Modal de rechazo
   const [modalRechazar, setModalRechazar] = useState<string | null>(null)
   const [motivoRechazo, setMotivoRechazo] = useState('')
   const [errorRechazo, setErrorRechazo] = useState('')
@@ -103,32 +103,35 @@ export default function PedidosBodegueroPage() {
   }
 
   useEffect(() => {
+    if (!tiendaActual) return
     fetchOrders()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tiendaActual])
 
-  // ─────────────────────────────────────────────
-  // ACCIONES
-  // ─────────────────────────────────────────────
+    // 🔥 Realtime Bodega (solo su bodega)
+    const channel = supabase
+      .channel(`bodeguero-pedidos-live-${tiendaActual.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pedidos',
+          filter: `bodega_id=eq.${tiendaActual.id}`
+        },
+        (payload) => {
+          console.log('🔔 Bodega: cambio en pedido, actualizando...', payload)
+          fetchOrders()
+        }
+      )
+      .subscribe()
 
-  const registrarHistorial = async (
-    pedidoId: string,
-    accion: string,
-    estadoAnterior: string,
-    estadoNuevo: string,
-    observacion: string
-  ) => {
+    return () => { supabase.removeChannel(channel) }
+  }, [tiendaActual?.id])
+
+  const registrarHistorial = async (pedidoId: string, accion: string, estadoAnterior: string, estadoNuevo: string, observacion: string) => {
     const { registrarCambioHistorial } = await import('@/lib/utils/historial')
-    await registrarCambioHistorial({
-      pedidoId,
-      accion: accion as any,
-      estadoAnterior,
-      estadoNuevo,
-      observacion,
-    })
+    await registrarCambioHistorial({ pedidoId, accion: accion as any, estadoAnterior, estadoNuevo, observacion })
   }
 
-  // aprobado_cartera → en_preparacion
   const handleAceptar = async (pedidoId: string) => {
     if (procesando) return
     setProcesando(pedidoId)
@@ -159,7 +162,6 @@ export default function PedidosBodegueroPage() {
     fetchOrders()
   }
 
-  // en_preparacion → listo_para_despacho
   const handleMarcarListo = async (pedidoId: string) => {
     if (procesando) return
     setProcesando(pedidoId)
@@ -190,35 +192,38 @@ export default function PedidosBodegueroPage() {
     fetchOrders()
   }
 
-  // listo_para_despacho → despachado (usamos el rpc)
+  // 🔥 AHORA SOLO ACTUALIZA EL ESTADO, EL STOCK YA SE DESCONTÓ EN CARTERA
   const handleDespachar = async (pedido: Pedido) => {
     if (procesando) return
     setProcesando(pedido.id)
     setErrorAccion('')
 
-    // Al no haber cambio de cantidades, mandamos todas las cantidades solicitadas
-    const p_cantidades = pedido.detalle_pedido.map(d => ({
-      detalle_id: d.id,
-      cantidad: d.cantidad_aprobada ?? d.cantidad_solicitada,
-    }))
+    const { data, error } = await supabase
+      .from('pedidos')
+      .update({ estado: 'despachado' })
+      .eq('id', pedido.id)
+      .eq('estado', 'listo_para_despacho')
+      .select('id')
 
-    const { error: errRpc } = await supabase.rpc('despachar_pedido', {
-      p_pedido: pedido.id,
-      p_cantidades,
-    })
-
-    if (errRpc) {
-      console.error('Error despachando:', errRpc)
-      setErrorAccion('No se pudo despachar: ' + errRpc.message)
+    if (error) {
+      console.error('Error despachando:', error)
+      setErrorAccion('No se pudo despachar: ' + error.message)
       setProcesando(null)
       return
     }
+    if (!data || data.length === 0) {
+      setErrorAccion('El pedido ya no está en listo para despacho. Recarga la página.')
+      setProcesando(null)
+      fetchOrders()
+      return
+    }
+
+    await registrarHistorial(pedido.id, 'despachado', 'listo_para_despacho', 'despachado', 'Pedido despachado. Stock previamente descontado en cartera.')
 
     setProcesando(null)
     fetchOrders()
   }
 
-  // despachado → entregado
   const handleMarcarEntregado = async (pedidoId: string) => {
     if (procesando) return
     setProcesando(pedidoId)
@@ -249,7 +254,6 @@ export default function PedidosBodegueroPage() {
     fetchOrders()
   }
 
-  // Rechazar (desde aprobado_cartera)
   const iniciarRechazo = (pedidoId: string) => {
     setMotivoRechazo('')
     setErrorRechazo('')
@@ -302,10 +306,6 @@ export default function PedidosBodegueroPage() {
     fetchOrders()
   }
 
-  // ─────────────────────────────────────────────
-  // FILTRADO Y AGRUPACIÓN
-  // ─────────────────────────────────────────────
-
   const vendedoresUnicos = useMemo(() => {
     const set = new Set<string>()
     pedidos.forEach(p => { if (p.usuarios?.nombre) set.add(p.usuarios.nombre) })
@@ -315,7 +315,9 @@ export default function PedidosBodegueroPage() {
   const pedidosFiltrados = useMemo(() => {
     const q = filtros.busqueda.trim().toLowerCase()
     return pedidos.filter(p => {
+      // 🔥 Filtro dinámico exacto
       if (filtros.estado !== 'todos' && p.estado !== filtros.estado) return false
+
       if (filtros.extra !== 'todos' && p.usuarios?.nombre !== filtros.extra) return false
 
       if (q) {
@@ -329,7 +331,6 @@ export default function PedidosBodegueroPage() {
     })
   }, [pedidos, filtros])
 
-  // Agrupar por estado (para secciones)
   const porEstado = useMemo(() => {
     const grupos = {
       aprobado_cartera: [] as Pedido[],
@@ -362,89 +363,36 @@ export default function PedidosBodegueroPage() {
 
     if (pedido.estado === 'aprobado_cartera') {
       return [
-        <button
-          key="rechazar"
-          onClick={(e) => { e.stopPropagation(); iniciarRechazo(pedido.id) }}
-          disabled={cargando}
-          className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg border border-red-300 text-red-600 bg-white hover:bg-red-50 active:scale-[0.95] disabled:opacity-50 transition-all shrink-0"
-        >
+        <button key="rechazar" onClick={(e) => { e.stopPropagation(); iniciarRechazo(pedido.id) }} disabled={cargando} className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg border border-red-300 text-red-600 bg-white hover:bg-red-50 active:scale-[0.95] disabled:opacity-50 transition-all shrink-0">
           <XCircleIcon className="w-4 h-4" />
           <span className="hidden sm:inline text-xs font-medium">Rechazar</span>
         </button>,
-        <button
-          key="aceptar"
-          onClick={(e) => { e.stopPropagation(); handleAceptar(pedido.id) }}
-          disabled={cargando}
-          className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0"
-        >
-          {cargando ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <>
-              <CheckCircleIcon className="w-4 h-4" />
-              <span className="hidden sm:inline text-xs font-semibold">Aceptar</span>
-            </>
-          )}
+        <button key="aceptar" onClick={(e) => { e.stopPropagation(); handleAceptar(pedido.id) }} disabled={cargando} className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0">
+          {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><CheckCircleIcon className="w-4 h-4" /><span className="hidden sm:inline text-xs font-semibold">Aceptar</span></>}
         </button>,
       ]
     }
 
     if (pedido.estado === 'en_preparacion') {
       return [
-        <button
-          key="listo"
-          onClick={(e) => { e.stopPropagation(); handleMarcarListo(pedido.id) }}
-          disabled={cargando}
-          className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0"
-        >
-          {cargando ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <>
-              <ArrowRightIcon className="w-4 h-4" />
-              <span className="hidden sm:inline text-xs font-semibold">Marcar listo</span>
-            </>
-          )}
+        <button key="listo" onClick={(e) => { e.stopPropagation(); handleMarcarListo(pedido.id) }} disabled={cargando} className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0">
+          {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><ArrowRightIcon className="w-4 h-4" /><span className="hidden sm:inline text-xs font-semibold">Marcar listo</span></>}
         </button>,
       ]
     }
 
     if (pedido.estado === 'listo_para_despacho') {
       return [
-        <button
-          key="despachar"
-          onClick={(e) => { e.stopPropagation(); handleDespachar(pedido) }}
-          disabled={cargando}
-          className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0"
-        >
-          {cargando ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <>
-              <TruckIcon className="w-4 h-4" />
-              <span className="hidden sm:inline text-xs font-semibold">Despachar</span>
-            </>
-          )}
+        <button key="despachar" onClick={(e) => { e.stopPropagation(); handleDespachar(pedido) }} disabled={cargando} className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0">
+          {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><TruckIcon className="w-4 h-4" /><span className="hidden sm:inline text-xs font-semibold">Despachar</span></>}
         </button>,
       ]
     }
 
     if (pedido.estado === 'despachado') {
       return [
-        <button
-          key="entregar"
-          onClick={(e) => { e.stopPropagation(); handleMarcarEntregado(pedido.id) }}
-          disabled={cargando}
-          className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-gray-700 text-white hover:bg-gray-800 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0"
-        >
-          {cargando ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <>
-              <ArchiveBoxIcon className="w-4 h-4" />
-              <span className="hidden sm:inline text-xs font-semibold">Entregar</span>
-            </>
-          )}
+        <button key="entregar" onClick={(e) => { e.stopPropagation(); handleMarcarEntregado(pedido.id) }} disabled={cargando} className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-gray-700 text-white hover:bg-gray-800 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0">
+          {cargando ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><ArchiveBoxIcon className="w-4 h-4" /><span className="hidden sm:inline text-xs font-semibold">Entregar</span></>}
         </button>,
       ]
     }
@@ -453,34 +401,10 @@ export default function PedidosBodegueroPage() {
   }
 
   const SECCIONES = [
-    {
-      key: 'aprobado_cartera',
-      titulo: 'Nuevos — aprobados por cartera',
-      descripcion: 'Confirma si puedes preparar el pedido',
-      icono: ClipboardDocumentListIcon,
-      color: 'text-blue-700',
-    },
-    {
-      key: 'en_preparacion',
-      titulo: 'En preparación',
-      descripcion: 'Alistando el pedido',
-      icono: ArrowRightIcon,
-      color: 'text-amber-700',
-    },
-    {
-      key: 'listo_para_despacho',
-      titulo: 'Listos para despacho',
-      descripcion: 'Terminados, listos para salir',
-      icono: CheckCircleIcon,
-      color: 'text-emerald-700',
-    },
-    {
-      key: 'despachado',
-      titulo: 'Despachados',
-      descripcion: 'En camino al cliente',
-      icono: TruckIcon,
-      color: 'text-violet-700',
-    },
+    { key: 'aprobado_cartera', titulo: 'Nuevos — aprobados por cartera', descripcion: 'Confirma si puedes preparar el pedido', icono: ClipboardDocumentListIcon, color: 'text-blue-700' },
+    { key: 'en_preparacion', titulo: 'En preparación', descripcion: 'Alistando el pedido', icono: ArrowRightIcon, color: 'text-amber-700' },
+    { key: 'listo_para_despacho', titulo: 'Listos para despacho', descripcion: 'Terminados, listos para salir', icono: CheckCircleIcon, color: 'text-emerald-700' },
+    { key: 'despachado', titulo: 'Despachados', descripcion: 'En camino al cliente', icono: TruckIcon, color: 'text-violet-700' },
   ] as const
 
   return (
@@ -491,12 +415,8 @@ export default function PedidosBodegueroPage() {
             <h1 className="text-2xl font-bold text-[#232323]">Pedidos</h1>
             <p className="text-sm text-[#828282] truncate mt-0.5">{tiendaActual?.nombre}</p>
           </div>
-          <button
-            onClick={() => setFiltrosAbiertos(true)}
-            className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-[#1A0087] text-white rounded-xl text-sm font-semibold hover:bg-[#130066] active:scale-[0.98] transition-all shadow-sm min-h-[44px]"
-          >
-            <FunnelIcon className="w-4 h-4" />
-            Filtros
+          <button onClick={() => setFiltrosAbiertos(true)} className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-[#1A0087] text-white rounded-xl text-sm font-semibold hover:bg-[#130066] active:scale-[0.98] transition-all shadow-sm min-h-[44px]">
+            <FunnelIcon className="w-4 h-4" />Filtros
           </button>
         </div>
 
@@ -504,9 +424,7 @@ export default function PedidosBodegueroPage() {
           <div className="border-t border-red-100 bg-red-50">
             <div className="w-full px-4 sm:px-6 py-2 text-sm text-red-700 flex items-center justify-between gap-3">
               <span>❌ {errorAccion}</span>
-              <button onClick={() => setErrorAccion('')} className="text-red-700 hover:text-red-900 text-xs font-medium">
-                Cerrar
-              </button>
+              <button onClick={() => setErrorAccion('')} className="text-red-700 hover:text-red-900 text-xs font-medium">Cerrar</button>
             </div>
           </div>
         )}
@@ -520,6 +438,7 @@ export default function PedidosBodegueroPage() {
                 onLimpiar={() => setFiltros(FILTROS_INICIALES)}
                 extraLabel="Vendedor"
                 extraOpciones={vendedoresUnicos}
+                estadosDisponibles={ESTADOS_POR_ROL.bodeguero}
               />
             </div>
           </div>
@@ -528,9 +447,7 @@ export default function PedidosBodegueroPage() {
 
       <main className="w-full px-4 sm:px-6 py-6">
         {loading ? (
-          <div className="flex justify-center py-20">
-            <div className="w-12 h-12 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
-          </div>
+          <div className="flex justify-center py-20"><div className="w-12 h-12 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin" /></div>
         ) : pedidos.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
             <ClipboardDocumentListIcon className="w-14 h-14 text-gray-300 mx-auto mb-3" />
@@ -547,20 +464,12 @@ export default function PedidosBodegueroPage() {
                   <div className="flex items-center gap-3 mb-3">
                     <Icono className={`w-5 h-5 ${sec.color}`} />
                     <h2 className={`text-lg font-bold ${sec.color}`}>{sec.titulo}</h2>
-                    <span className="text-sm font-semibold bg-gray-100 text-gray-700 px-3 py-0.5 rounded-full">
-                      {items.length}
-                    </span>
+                    <span className="text-sm font-semibold bg-gray-100 text-gray-700 px-3 py-0.5 rounded-full">{items.length}</span>
                   </div>
                   <p className="text-xs text-[#828282] mb-3">{sec.descripcion}</p>
                   <div className="space-y-3">
                     {items.map(p => (
-                      <PedidoCardCompacta
-                        key={p.id}
-                        pedido={p}
-                        onClick={() => setPedidoAbierto(p.id)}
-                        acciones={renderAcciones(p)}
-                        esAdmin={rolActual === 'admin'}
-                      />
+                      <PedidoCardCompacta key={p.id} pedido={p} onClick={() => setPedidoAbierto(p.id)} acciones={renderAcciones(p)} esAdmin={rolActual === 'admin'} />
                     ))}
                   </div>
                 </section>
@@ -578,6 +487,7 @@ export default function PedidosBodegueroPage() {
         extraLabel="Vendedor"
         extraOpciones={vendedoresUnicos}
         placeholderBusqueda="Buscar por COT, factura, pedido, cliente o vendedor..."
+        estadosDisponibles={ESTADOS_POR_ROL.bodeguero}
       />
 
       {pedidoActual && (
@@ -586,19 +496,11 @@ export default function PedidosBodegueroPage() {
           onClose={() => setPedidoAbierto(null)}
           onRefresh={fetchOrders}
           rolActual="bodeguero"
-          onVerCotizacion={(id) => {
-            setPedidoAbierto(null)
-            setVerCotizacion(id)
-          }}
+          onVerCotizacion={(id) => { setPedidoAbierto(null); setVerCotizacion(id) }}
         />
       )}
 
-      {verCotizacion && (
-        <CotizacionPreview
-          pedidoId={verCotizacion}
-          onClose={() => setVerCotizacion(null)}
-        />
-      )}
+      {verCotizacion && <CotizacionPreview pedidoId={verCotizacion} onClose={() => setVerCotizacion(null)} />}
 
       {/* MODAL RECHAZAR */}
       {pedidoRechazando && (
@@ -611,9 +513,7 @@ export default function PedidosBodegueroPage() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#232323]">Rechazar pedido</h3>
-                  <p className="text-xs text-[#828282] mt-0.5">
-                    Indica el motivo del rechazo
-                  </p>
+                  <p className="text-xs text-[#828282] mt-0.5">Indica el motivo del rechazo</p>
                 </div>
               </div>
             </div>
@@ -629,53 +529,22 @@ export default function PedidosBodegueroPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[#232323] mb-2">
-                  Motivo del rechazo <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={motivoRechazo}
-                  onChange={(e) => { setMotivoRechazo(e.target.value); setErrorRechazo('') }}
-                  placeholder="Ej: Productos sin stock, cliente con problemas, cantidades incorrectas..."
-                  rows={3}
-                  disabled={procesando === pedidoRechazando.id}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500 resize-none"
-                />
-                <p className="text-[10px] text-[#828282] mt-1">
-                  {motivoRechazo.trim().length} / 10 caracteres mínimo
-                </p>
+                <label className="block text-sm font-medium text-[#232323] mb-2">Motivo del rechazo <span className="text-red-500">*</span></label>
+                <textarea value={motivoRechazo} onChange={(e) => { setMotivoRechazo(e.target.value); setErrorRechazo('') }} placeholder="Ej: Productos sin stock, cliente con problemas, cantidades incorrectas..." rows={3} disabled={procesando === pedidoRechazando.id} className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500 resize-none" />
+                <p className="text-[10px] text-[#828282] mt-1">{motivoRechazo.trim().length} / 10 caracteres mínimo</p>
               </div>
 
-              {errorRechazo && (
-                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">
-                  {errorRechazo}
-                </div>
-              )}
+              {errorRechazo && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{errorRechazo}</div>}
             </div>
 
             <div className="border-t border-gray-100 p-4 flex flex-col-reverse sm:flex-row gap-2">
-              <button
-                onClick={() => setModalRechazar(null)}
-                disabled={procesando === pedidoRechazando.id}
-                className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 disabled:opacity-50 min-h-[48px]"
-              >
-                Cancelar
-              </button>
+              <button onClick={() => setModalRechazar(null)} disabled={procesando === pedidoRechazando.id} className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 disabled:opacity-50 min-h-[48px]">Cancelar</button>
               <div className="hidden sm:block flex-1" />
-              <button
-                onClick={confirmarRechazo}
-                disabled={procesando === pedidoRechazando.id || motivoRechazo.trim().length < 10}
-                className="w-full sm:w-auto px-5 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[48px] transition-all"
-              >
+              <button onClick={confirmarRechazo} disabled={procesando === pedidoRechazando.id || motivoRechazo.trim().length < 10} className="w-full sm:w-auto px-5 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-h-[48px] transition-all">
                 {procesando === pedidoRechazando.id ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Rechazando...
-                  </>
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Rechazando...</>
                 ) : (
-                  <>
-                    <XCircleIcon className="w-5 h-5" />
-                    Confirmar rechazo
-                  </>
+                  <><XCircleIcon className="w-5 h-5" />Confirmar rechazo</>
                 )}
               </button>
             </div>

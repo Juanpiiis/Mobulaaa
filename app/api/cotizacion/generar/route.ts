@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { CotizacionDocument } from '@/components/cotizaciones/CotizacionDocument'
-import { buscarOCrearSubcarpeta, subirPDFaDrive } from '@/lib/google/drive'
+import { obtenerCarpetaAñoMes, subirPDFaDrive } from '@/lib/google/drive'
 import {
     formatearFechaCotizacion,
     calcularVencimiento,
@@ -107,13 +107,7 @@ export async function POST(req: NextRequest) {
             React.createElement(CotizacionDocument, { data: pdfData }) as any
         )
 
-        // 6. Nombre del archivo y subcarpeta
-        const fecha = new Date(pedido.fecha)
-        const meses = [
-            'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-        ]
-        const nombreSubcarpeta = `${meses[fecha.getMonth()]} ${fecha.getFullYear()}`
+        // 6. Nombre del archivo
         const nombreArchivo = `${pedido.numero_cotizacion}.pdf`
 
         // 7. Intentar subir a Drive (OPCIONAL)
@@ -122,8 +116,16 @@ export async function POST(req: NextRequest) {
         let driveError: string | null = null
 
         try {
-            const subcarpetaId = await buscarOCrearSubcarpeta(nombreSubcarpeta)
-            const subida = await subirPDFaDrive(nombreArchivo, pdfBuffer, subcarpetaId)
+            // Extraemos el nombre de la bodega para crear la carpeta dinámica
+            const nombreBodega = pedido.bodegas?.nombre || 'General'
+            const fechaPedido = new Date(pedido.fecha)
+
+            // La función se encarga de crear: Cotizaciones / [Bodega] / [Año] / [Mes]
+            const carpetaMesId = await obtenerCarpetaAñoMes(nombreBodega, fechaPedido)
+
+            // Subimos el PDF a esa carpeta
+            const subida = await subirPDFaDrive(nombreArchivo, pdfBuffer, carpetaMesId)
+
             fileId = subida.fileId
             url = subida.url
             console.log('✅ PDF subido a Drive:', url)
@@ -145,7 +147,7 @@ export async function POST(req: NextRequest) {
             console.error('Error guardando link en BD:', errUpdate)
         }
 
-        // 9. Devolver JSON con el PDF en base64 (así el frontend puede descargarlo sin problemas)
+        // 9. Devolver JSON con el PDF en base64
         const pdfBase64 = pdfBuffer.toString('base64')
 
         return NextResponse.json({
@@ -154,7 +156,6 @@ export async function POST(req: NextRequest) {
             fileId,
             driveError,
             numeroCotizacion: pedido.numero_cotizacion,
-            subcarpeta: nombreSubcarpeta,
             nombreArchivo,
             pdfBase64,
         })

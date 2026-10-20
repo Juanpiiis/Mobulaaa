@@ -1,5 +1,5 @@
 'use client'
-
+import { PuntitoNotificacion } from './PuntitoNotificacion'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import Link from 'next/link'
@@ -280,10 +280,19 @@ export default function DashboardContent({ children, rol }: { children: React.Re
                 key={item.name}
                 href={item.href}
                 onClick={handleNavClick}
-                className={`sidebar-nav-item ${isActive ? 'sidebar-nav-item--active' : ''}`}
+                className={`sidebar-nav-item flex items-center justify-between ${isActive ? 'sidebar-nav-item--active' : ''}`}
               >
-                <item.icon className="sidebar-nav-item__icon" />
-                <span>{item.name}</span>
+                <div className="flex items-center gap-3">
+                  <item.icon className="sidebar-nav-item__icon" />
+                  <span>{item.name}</span>
+                </div>
+
+                {((item.href === '/cartera' && rol === 'cartera') ||
+                  (item.href === '/bodeguero/pedidos' && rol === 'bodeguero') ||
+                  (item.href === '/admin/pedidos' && rol === 'admin') ||
+                  (item.href === '/vendedor/mis-pedidos' && rol === 'vendedor')) && (
+                    <PuntitoNotificacion rol={rol} />
+                  )}
               </Link>
             )
           })}

@@ -134,10 +134,24 @@ export default function PedidosAdminPage() {
   }
 
   useEffect(() => {
+    if (!tiendaActual) return
     fetchOrders()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tiendaActual])
 
+    // 🔥 Realtime Admin (todas las bodegas)
+    const channel = supabase
+      .channel('admin-pedidos-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pedidos' },
+        (payload) => {
+          console.log('🔔 Admin: cambio en pedido, actualizando...', payload)
+          fetchOrders()
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [tiendaActual?.id])
   // ─────────────────────────────────────────────
   // HISTORIAL
   // ─────────────────────────────────────────────

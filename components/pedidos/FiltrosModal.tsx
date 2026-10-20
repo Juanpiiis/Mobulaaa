@@ -8,12 +8,11 @@ import {
 } from '@heroicons/react/24/outline'
 
 export type FiltroFecha = 'todo' | 'hoy' | '7d' | '30d' | 'mes'
-export type FiltroEstado = 'todos' | 'pendiente' | 'aprobado' | 'despachado' | 'entregado' | 'rechazado' | 'cancelado'
 
 export interface FiltrosValores {
     busqueda: string
     fecha: FiltroFecha
-    estado: FiltroEstado
+    estado: string // Ahora es string para aceptar los estados reales de la BD
     extra: string
 }
 
@@ -22,6 +21,44 @@ export const FILTROS_INICIALES: FiltrosValores = {
     fecha: 'todo',
     estado: 'todos',
     extra: 'todos',
+}
+
+// Opciones de estado predefinidas por rol
+export const ESTADOS_POR_ROL = {
+    admin: [
+        { valor: 'todos', etiqueta: 'Todos' },
+        { valor: 'pendiente', etiqueta: 'Pendientes' },
+        { valor: 'aprobado_cartera', etiqueta: 'Aprobados' },
+        { valor: 'en_preparacion', etiqueta: 'En preparación' },
+        { valor: 'listo_para_despacho', etiqueta: 'Listos p/ despacho' },
+        { valor: 'despachado', etiqueta: 'Despachados' },
+        { valor: 'entregado', etiqueta: 'Entregados' },
+        { valor: 'rechazado_cartera', etiqueta: 'Rechazados' },
+        { valor: 'cancelado', etiqueta: 'Cancelados' },
+    ],
+    cartera: [
+        { valor: 'todos', etiqueta: 'Todos' },
+        { valor: 'pendiente', etiqueta: 'Por aprobar' },
+        { valor: 'aprobado_cartera', etiqueta: 'Aprobados' },
+        { valor: 'despachado', etiqueta: 'Despachados' },
+        { valor: 'entregado', etiqueta: 'Entregados' },
+        { valor: 'rechazado_cartera', etiqueta: 'Rechazados' },
+    ],
+    bodeguero: [
+        { valor: 'todos', etiqueta: 'Todos' },
+        { valor: 'aprobado_cartera', etiqueta: 'Nuevos' },
+        { valor: 'en_preparacion', etiqueta: 'En preparación' },
+        { valor: 'listo_para_despacho', etiqueta: 'Listos p/ despacho' },
+        { valor: 'despachado', etiqueta: 'Despachados' },
+    ],
+    vendedor: [
+        { valor: 'todos', etiqueta: 'Todos' },
+        { valor: 'pendiente', etiqueta: 'Pendientes' },
+        { valor: 'aprobado_cartera', etiqueta: 'Aprobados' },
+        { valor: 'despachado', etiqueta: 'Despachados' },
+        { valor: 'entregado', etiqueta: 'Entregados' },
+        { valor: 'rechazado_cartera', etiqueta: 'Rechazados' },
+    ]
 }
 
 interface Props {
@@ -34,6 +71,7 @@ interface Props {
     placeholderBusqueda?: string
     mostrarFecha?: boolean
     mostrarEstado?: boolean
+    estadosDisponibles?: { valor: string; etiqueta: string }[]
 }
 
 const OPCIONES_FECHA: { valor: FiltroFecha; etiqueta: string }[] = [
@@ -42,16 +80,6 @@ const OPCIONES_FECHA: { valor: FiltroFecha; etiqueta: string }[] = [
     { valor: '7d', etiqueta: '7 días' },
     { valor: '30d', etiqueta: '30 días' },
     { valor: 'mes', etiqueta: 'Este mes' },
-]
-
-const OPCIONES_ESTADO: { valor: FiltroEstado; etiqueta: string }[] = [
-    { valor: 'todos', etiqueta: 'Todos' },
-    { valor: 'pendiente', etiqueta: 'En revisión' },
-    { valor: 'aprobado', etiqueta: 'Aprobados' },
-    { valor: 'despachado', etiqueta: 'Despachados' },
-    { valor: 'entregado', etiqueta: 'Entregados' },
-    { valor: 'rechazado', etiqueta: 'Rechazados' },
-    { valor: 'cancelado', etiqueta: 'Cancelados' },
 ]
 
 export function FiltrosModal({
@@ -64,6 +92,7 @@ export function FiltrosModal({
     placeholderBusqueda = 'Buscar por COT, factura, pedido, cliente...',
     mostrarFecha = true,
     mostrarEstado = true,
+    estadosDisponibles = ESTADOS_POR_ROL.admin,
 }: Props) {
     const [local, setLocal] = useState<FiltrosValores>(valores)
 
@@ -93,7 +122,6 @@ export function FiltrosModal({
     return (
         <div className="fixed inset-0 z-[80] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
             <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-
                 <div className="shrink-0 flex items-center justify-between p-5 border-b border-gray-100">
                     <div className="flex items-center gap-2">
                         <div className="w-9 h-9 rounded-xl bg-[#1A0087]/10 flex items-center justify-center">
@@ -104,20 +132,14 @@ export function FiltrosModal({
                             <p className="text-[11px] text-[#828282]">Refina los resultados</p>
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 active:bg-gray-200 transition-colors"
-                        aria-label="Cerrar"
-                    >
+                    <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 active:bg-gray-200 transition-colors" aria-label="Cerrar">
                         <XMarkIcon className="w-5 h-5" />
                     </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-5 space-y-5">
                     <div>
-                        <label className="block text-xs font-semibold text-[#828282] uppercase tracking-wide mb-2">
-                            Buscar
-                        </label>
+                        <label className="block text-xs font-semibold text-[#828282] uppercase tracking-wide mb-2">Buscar</label>
                         <div className="relative">
                             <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                             <input
@@ -132,19 +154,14 @@ export function FiltrosModal({
 
                     {mostrarFecha && (
                         <div>
-                            <label className="block text-xs font-semibold text-[#828282] uppercase tracking-wide mb-2">
-                                Fecha
-                            </label>
+                            <label className="block text-xs font-semibold text-[#828282] uppercase tracking-wide mb-2">Fecha</label>
                             <div className="flex flex-wrap gap-2">
                                 {OPCIONES_FECHA.map(op => (
                                     <button
                                         key={op.valor}
                                         type="button"
                                         onClick={() => setLocal({ ...local, fecha: op.valor })}
-                                        className={`px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${local.fecha === op.valor
-                                                ? 'bg-[#1A0087] text-white shadow-sm'
-                                                : 'bg-gray-100 text-[#232323] hover:bg-gray-200'
-                                            }`}
+                                        className={`px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${local.fecha === op.valor ? 'bg-[#1A0087] text-white shadow-sm' : 'bg-gray-100 text-[#232323] hover:bg-gray-200'}`}
                                     >
                                         {op.etiqueta}
                                     </button>
@@ -155,19 +172,14 @@ export function FiltrosModal({
 
                     {mostrarEstado && (
                         <div>
-                            <label className="block text-xs font-semibold text-[#828282] uppercase tracking-wide mb-2">
-                                Estado
-                            </label>
+                            <label className="block text-xs font-semibold text-[#828282] uppercase tracking-wide mb-2">Estado</label>
                             <div className="flex flex-wrap gap-2">
-                                {OPCIONES_ESTADO.map(op => (
+                                {estadosDisponibles.map(op => (
                                     <button
                                         key={op.valor}
                                         type="button"
                                         onClick={() => setLocal({ ...local, estado: op.valor })}
-                                        className={`px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${local.estado === op.valor
-                                                ? 'bg-[#1A0087] text-white shadow-sm'
-                                                : 'bg-gray-100 text-[#232323] hover:bg-gray-200'
-                                            }`}
+                                        className={`px-3.5 py-2 rounded-xl text-xs font-medium transition-all ${local.estado === op.valor ? 'bg-[#1A0087] text-white shadow-sm' : 'bg-gray-100 text-[#232323] hover:bg-gray-200'}`}
                                     >
                                         {op.etiqueta}
                                     </button>
@@ -178,9 +190,7 @@ export function FiltrosModal({
 
                     {extraLabel && extraOpciones && extraOpciones.length > 0 && (
                         <div>
-                            <label className="block text-xs font-semibold text-[#828282] uppercase tracking-wide mb-2">
-                                {extraLabel}
-                            </label>
+                            <label className="block text-xs font-semibold text-[#828282] uppercase tracking-wide mb-2">{extraLabel}</label>
                             <select
                                 value={local.extra}
                                 onChange={e => setLocal({ ...local, extra: e.target.value })}
@@ -188,9 +198,7 @@ export function FiltrosModal({
                             >
                                 <option value="todos">Todos</option>
                                 {extraOpciones.map(op => (
-                                    <option key={op.valor} value={op.valor}>
-                                        {op.etiqueta}
-                                    </option>
+                                    <option key={op.valor} value={op.valor}>{op.etiqueta}</option>
                                 ))}
                             </select>
                         </div>
@@ -198,22 +206,10 @@ export function FiltrosModal({
                 </div>
 
                 <div className="shrink-0 border-t border-gray-100 bg-white p-4 flex gap-2">
-                    <button
-                        type="button"
-                        onClick={limpiar}
-                        className="flex-1 min-h-[44px] px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors"
-                    >
+                    <button type="button" onClick={limpiar} className="flex-1 min-h-[44px] px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 active:bg-gray-100 transition-colors">
                         Limpiar
                     </button>
-                    <button
-                        type="button"
-                        onClick={aplicar}
-                        className={`flex-1 min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all shadow-sm ${hayCambios
-                                ? 'bg-[#1A0087] hover:bg-[#130066] active:scale-[0.98]'
-                                : 'bg-gray-300 cursor-not-allowed'
-                            }`}
-                        disabled={!hayCambios}
-                    >
+                    <button type="button" onClick={aplicar} disabled={!hayCambios} className={`flex-1 min-h-[44px] px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all shadow-sm ${hayCambios ? 'bg-[#1A0087] hover:bg-[#130066] active:scale-[0.98]' : 'bg-gray-300 cursor-not-allowed'}`}>
                         Aplicar
                     </button>
                 </div>
@@ -228,12 +224,14 @@ export function FiltrosChips({
     onLimpiar,
     extraLabel,
     extraOpciones,
+    estadosDisponibles = ESTADOS_POR_ROL.admin,
 }: {
     valores: FiltrosValores
     onQuitar: (campo: keyof FiltrosValores) => void
     onLimpiar: () => void
     extraLabel?: string
     extraOpciones?: { valor: string; etiqueta: string }[]
+    estadosDisponibles?: { valor: string; etiqueta: string }[]
 }) {
     const chips: { campo: keyof FiltrosValores; etiqueta: string }[] = []
 
@@ -245,7 +243,7 @@ export function FiltrosChips({
         if (op) chips.push({ campo: 'fecha', etiqueta: `Fecha: ${op.etiqueta}` })
     }
     if (valores.estado !== 'todos') {
-        const op = OPCIONES_ESTADO.find(o => o.valor === valores.estado)
+        const op = estadosDisponibles.find(o => o.valor === valores.estado)
         if (op) chips.push({ campo: 'estado', etiqueta: `Estado: ${op.etiqueta}` })
     }
     if (valores.extra !== 'todos' && extraOpciones) {
@@ -260,20 +258,13 @@ export function FiltrosChips({
     return (
         <div className="flex flex-wrap items-center gap-2">
             {chips.map(chip => (
-                <button
-                    key={chip.campo}
-                    onClick={() => onQuitar(chip.campo)}
-                    className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] hover:bg-[#1A0087]/20 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
-                >
+                <button key={chip.campo} onClick={() => onQuitar(chip.campo)} className="flex items-center gap-1.5 bg-[#1A0087]/10 text-[#1A0087] hover:bg-[#1A0087]/20 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors">
                     {chip.etiqueta}
                     <XMarkIcon className="w-3.5 h-3.5" />
                 </button>
             ))}
             {chips.length > 1 && (
-                <button
-                    onClick={onLimpiar}
-                    className="text-xs text-[#828282] hover:text-[#232323] font-medium underline ml-1"
-                >
+                <button onClick={onLimpiar} className="text-xs text-[#828282] hover:text-[#232323] font-medium underline ml-1">
                     Limpiar todo
                 </button>
             )}

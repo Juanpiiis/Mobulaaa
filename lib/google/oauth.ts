@@ -10,12 +10,11 @@ const SCOPES = [
 export function getOAuth2Client() {
     const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
     const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
 
     if (!clientId || !clientSecret) {
         throw new Error('Faltan GOOGLE_OAUTH_CLIENT_ID o GOOGLE_OAUTH_CLIENT_SECRET')
     }
-
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
 
     return new google.auth.OAuth2(
         clientId,
@@ -30,7 +29,7 @@ export function getAuthUrl(): string {
     return oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: SCOPES,
-        prompt: 'consent',
+        prompt: 'consent', // Fuerza a generar refresh_token
     })
 }
 
@@ -63,16 +62,18 @@ export async function saveTokens(refreshToken: string, email: string): Promise<v
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('No autenticado')
 
+    // Guardamos forzando la llave 'global' para que todos usen esta cuenta
     const { error } = await supabase
         .from('google_oauth_tokens')
         .upsert(
             {
-                user_id: user.id,
+                user_id: user.id, // Quien lo configuró (el admin)
+                config_key: 'global',
                 refresh_token: refreshToken,
                 email,
                 updated_at: new Date().toISOString(),
             },
-            { onConflict: 'user_id' }
+            { onConflict: 'config_key' }
         )
 
     if (error) throw error
@@ -81,13 +82,11 @@ export async function saveTokens(refreshToken: string, email: string): Promise<v
 export async function getStoredAuth() {
     const supabase = await createClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return null
-
+    // Buscamos el token global (sin importar qué usuario esté logueado)
     const { data, error } = await supabase
         .from('google_oauth_tokens')
         .select('refresh_token')
-        .eq('user_id', user.id)
+        .eq('config_key', 'global')
         .maybeSingle()
 
     if (error || !data?.refresh_token) return null

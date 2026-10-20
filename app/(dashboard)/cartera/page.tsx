@@ -11,6 +11,7 @@ import {
   FiltrosModal,
   FiltrosChips,
   FILTROS_INICIALES,
+  ESTADOS_POR_ROL,
   type FiltrosValores,
 } from '@/components/pedidos/FiltrosModal'
 import {
@@ -133,9 +134,8 @@ export default function CarteraPage() {
     setLoading(false)
   }
 
-  useEffect(() => {
-    fetchOrders()
-  }, [tiendaActual])
+
+
 
   // ─────────────────────────────────────────────────────
   // Aprobar pedido
@@ -153,7 +153,6 @@ export default function CarteraPage() {
     setProcesando(pedido.id)
 
     try {
-      // 1. Calcular totales
       const subtotal = pedido.detalle_pedido.reduce(
         (acc, d: any) => acc + (d.precio_unitario ?? d.productos?.precio ?? 0) * d.cantidad_solicitada,
         0
@@ -162,34 +161,27 @@ export default function CarteraPage() {
       const descuento = subtotal * (porcentaje / 100)
       const total = subtotal - descuento
 
-      // 2. Generar números
       const { generarNumeroCotizacion, generarNumeroFactura } = await import('@/lib/utils/cotizacion')
       const numeroCotizacion = await generarNumeroCotizacion(supabase)
       const numeroFactura = generarNumeroFactura()
 
-      // 3. Actualizar pedido
-      const { error: errUpdate } = await supabase
-        .from('pedidos')
-        .update({
-          estado: 'aprobado_cartera',
-          subtotal,
-          descuento_porcentaje: porcentaje,
-          descuento_valor: descuento,
-          total,
-          numero_cotizacion: numeroCotizacion,
-          numero_factura: numeroFactura,
-          aprobado_cartera_en: new Date().toISOString(),
-        })
-        .eq('id', pedido.id)
-        .eq('estado', 'pendiente')
+      // RPC transaccional que actualiza y descuenta stock
+      const { error: errRpc } = await supabase.rpc('aprobar_pedido_cartera', {
+        p_pedido_id: pedido.id,
+        p_subtotal: subtotal,
+        p_descuento_porcentaje: porcentaje,
+        p_descuento_valor: descuento,
+        p_total: total,
+        p_numero_cotizacion: numeroCotizacion,
+        p_numero_factura: numeroFactura,
+      })
 
-      if (errUpdate) {
-        alert('Error actualizando pedido: ' + errUpdate.message)
+      if (errRpc) {
+        alert('Error aprobando pedido (puede que no haya stock): ' + errRpc.message)
         setProcesando(null)
         return
       }
 
-      // 4. Registrar en historial
       const { registrarCambioHistorial } = await import('@/lib/utils/historial')
       await registrarCambioHistorial({
         pedidoId: pedido.id,
@@ -199,14 +191,9 @@ export default function CarteraPage() {
         observacion: observacionAprobar.trim()
           ? `Aprobado por cartera. Cotización: ${numeroCotizacion}. Obs: ${observacionAprobar.trim()}`
           : `Aprobado por cartera. Cotización: ${numeroCotizacion}`,
-        cambios: {
-          numero_cotizacion: numeroCotizacion,
-          numero_factura: numeroFactura,
-          total,
-        },
+        cambios: { numero_cotizacion: numeroCotizacion, numero_factura: numeroFactura, total },
       })
 
-      // 5. Generar PDF y subir a Drive
       const res = await fetch('/api/cotizacion/generar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -217,39 +204,19 @@ export default function CarteraPage() {
 
       if (!res.ok) {
         console.error('Error generando PDF:', data)
-        alert(
-          'Pedido aprobado, pero hubo un error generando el PDF: ' +
-          (data.error || 'Error desconocido')
-        )
+        alert('Pedido aprobado, pero hubo un error generando el PDF: ' + (data.error || 'Error desconocido'))
       } else {
         await registrarCambioHistorial({
           pedidoId: pedido.id,
           accion: 'cotizacion_generada',
-          observacion: data.url
-            ? `PDF subido a Google Drive`
-            : `PDF generado (Drive no disponible: ${data.driveError})`,
-          cambios: {
-            numero_cotizacion: numeroCotizacion,
-            carpeta: data.subcarpeta,
-            archivo: data.nombreArchivo,
-            url: data.url,
-          },
+          observacion: data.url ? `PDF subido a Google Drive` : `PDF generado (Drive no disponible: ${data.driveError})`,
+          cambios: { numero_cotizacion: numeroCotizacion, carpeta: data.subcarpeta, archivo: data.nombreArchivo, url: data.url },
         })
 
         if (data.url) {
-          alert(
-            `✅ Pedido aprobado\n\n` +
-            `Cotización: ${data.numeroCotizacion}\n` +
-            `Carpeta: ${data.subcarpeta}\n` +
-            `Archivo: ${data.nombreArchivo}\n\n` +
-            `El PDF se subió a Drive`
-          )
+          alert(`✅ Pedido aprobado\n\nCotización: ${data.numeroCotizacion}\nCarpeta: ${data.subcarpeta}\nArchivo: ${data.nombreArchivo}\n\nEl PDF se subió a Drive`)
         } else {
-          alert(
-            `✅ Pedido aprobado\n\n` +
-            `Cotización: ${data.numeroCotizacion}\n\n` +
-            `⚠️ El PDF se generó pero NO se pudo subir a Drive.`
-          )
+          alert(`✅ Pedido aprobado\n\nCotización: ${data.numeroCotizacion}\n\n⚠️ El PDF se generó pero NO se pudo subir a Drive.`)
         }
       }
 
@@ -262,7 +229,7 @@ export default function CarteraPage() {
   }
 
   // ─────────────────────────────────────────────────────
-  // Rechazar pedido → vuelve a 'devuelto_por_cartera'
+  // Rechazar pedido
   // ─────────────────────────────────────────────────────
   const iniciarRechazar = (pedidoId: string) => {
     setMotivoRechazar('')
@@ -284,7 +251,6 @@ export default function CarteraPage() {
 
     setProcesando(pedido.id)
 
-    // 1. Devolver el pedido a 'devuelto_por_cartera'
     const { error: errUpdate } = await supabase
       .from('pedidos')
       .update({ estado: 'rechazado_cartera' })
@@ -297,7 +263,6 @@ export default function CarteraPage() {
       return
     }
 
-    // 2. Registrar en historial
     const { registrarCambioHistorial } = await import('@/lib/utils/historial')
     await registrarCambioHistorial({
       pedidoId: pedido.id,
@@ -305,9 +270,7 @@ export default function CarteraPage() {
       estadoAnterior: 'pendiente',
       estadoNuevo: 'rechazado_cartera',
       observacion: `Rechazado por cartera. Motivo: ${motivoRechazar.trim()}`,
-      cambios: {
-        motivo: motivoRechazar.trim(),
-      },
+      cambios: { motivo: motivoRechazar.trim() },
     })
 
     setModalRechazar(null)
@@ -319,11 +282,10 @@ export default function CarteraPage() {
   }
 
   // ─────────────────────────────────────────────────────
-  // Separación
+  // Separación y Filtros
   // ─────────────────────────────────────────────────────
   const porAprobar = useMemo(() => {
     const arr = pedidos.filter(p => p.estado === 'pendiente')
-    // Ordenar: importantes primero, luego fecha ascendente
     return [...arr].sort((a, b) => {
       if (a.importante && !b.importante) return -1
       if (!a.importante && b.importante) return 1
@@ -340,34 +302,18 @@ export default function CarteraPage() {
   const historialFiltrado = useMemo(() => {
     const q = filtros.busqueda.trim().toLowerCase()
     return pedidos.filter(p => {
-      // Historial: todo menos lo que está por aprobar
-      if (p.estado === 'pendiente') return false
+      if (p.estado === 'pendiente') return false // En historial mostramos lo que NO está por aprobar
 
-      // Filtro estado
-      if (filtros.estado === 'pendiente' && p.estado !== 'pendiente') return false
-      if (filtros.estado === 'aprobado' && !['aprobado_cartera'].includes(p.estado)) return false
-      if (filtros.estado === 'despachado' && p.estado !== 'despachado') return false
-      if (filtros.estado === 'entregado' && p.estado !== 'entregado') return false
-      if (filtros.estado === 'rechazado' && !['rechazado_bodega', 'rechazado_cartera'].includes(p.estado)) return false
-      if (filtros.estado === 'cancelado' && p.estado !== 'cancelado') return false
+      // 🔥 Filtro dinámico exacto por estado de la BD
+      if (filtros.estado !== 'todos' && p.estado !== filtros.estado) return false
 
-      // Filtro fecha
       if (!estaEnRango(p.fecha, filtros.fecha)) return false
-
-      // Filtro vendedor
       if (filtros.extra !== 'todos' && p.usuarios?.nombre !== filtros.extra) return false
 
-      // Búsqueda por texto
       if (q) {
         const partes = [
-          p.numero_cotizacion,
-          p.numero_factura,
-          p.id,
-          String(p.id).slice(0, 8),
-          p.usuarios?.nombre,
-          p.clientes?.nombre,
-          p.clientes?.cc_nit,
-          p.observacion,
+          p.numero_cotizacion, p.numero_factura, p.id, String(p.id).slice(0, 8),
+          p.usuarios?.nombre, p.clientes?.nombre, p.clientes?.cc_nit, p.observacion,
         ].filter(Boolean).map(s => String(s).toLowerCase())
         if (!partes.some(s => s.includes(q))) return false
       }
@@ -387,15 +333,24 @@ export default function CarteraPage() {
   }, [historialFiltrado])
 
   useEffect(() => {
-    if (historialPorMes.length > 0) {
-      setMesesAbiertos(prev => {
-        const nuevo = { ...prev }
-        if (Object.keys(nuevo).length === 0) nuevo[historialPorMes[0][0]] = true
-        return nuevo
-      })
-    }
-  }, [historialPorMes.length])
+    if (!tiendaActual) return
+    fetchOrders()
 
+    // 🔥 Realtime Cartera (escucha todas las bodegas)
+    const channel = supabase
+      .channel('cartera-pedidos-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pedidos' },
+        (payload) => {
+          console.log('🔔 Cartera: cambio en pedido, actualizando...', payload)
+          fetchOrders()
+        }
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [tiendaActual?.id])
   const toggleMes = (key: string) => {
     setMesesAbiertos(prev => ({ ...prev, [key]: !prev[key] }))
   }
@@ -418,28 +373,14 @@ export default function CarteraPage() {
     const btns: React.ReactNode[] = []
 
     btns.push(
-      <button
-        key="rechazar"
-        onClick={() => iniciarRechazar(pedido.id)}
-        disabled={cargando}
-        title="Devolver a bodega"
-        aria-label="Rechazar"
-        className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg border border-red-300 text-red-600 bg-white hover:bg-red-50 active:scale-[0.95] disabled:opacity-50 transition-all shrink-0"
-      >
+      <button key="rechazar" onClick={() => iniciarRechazar(pedido.id)} disabled={cargando} title="Devolver a bodega" aria-label="Rechazar" className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg border border-red-300 text-red-600 bg-white hover:bg-red-50 active:scale-[0.95] disabled:opacity-50 transition-all shrink-0">
         <XCircleIcon className="w-4 h-4" />
         <span className="hidden sm:inline text-xs font-medium">Rechazar</span>
       </button>
     )
 
     btns.push(
-      <button
-        key="aprobar"
-        onClick={() => iniciarAprobar(pedido.id)}
-        disabled={cargando}
-        title="Aprobar y generar cotización"
-        aria-label="Aprobar"
-        className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0"
-      >
+      <button key="aprobar" onClick={() => iniciarAprobar(pedido.id)} disabled={cargando} title="Aprobar y generar cotización" aria-label="Aprobar" className="h-10 px-3 flex items-center justify-center gap-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700 active:scale-[0.95] disabled:opacity-50 transition-all shadow-sm shrink-0">
         {cargando ? (
           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
         ) : (
@@ -456,17 +397,13 @@ export default function CarteraPage() {
 
   return (
     <div className="min-h-screen bg-[#F7F7FB] w-full">
-      {/* HEADER */}
       <header className="sticky top-[calc(var(--main-padding)*-1)] -mx-[var(--main-padding)] -mt-[var(--main-padding)] z-20 bg-white border-b border-gray-100">
         <div className="w-full px-4 sm:px-6 py-4 flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-[#232323]">Cartera</h1>
             <p className="text-sm text-[#828282] truncate mt-0.5">{tiendaActual?.nombre}</p>
           </div>
-          <button
-            onClick={() => setFiltrosAbiertos(true)}
-            className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-[#1A0087] text-white rounded-xl text-sm font-semibold hover:bg-[#130066] active:scale-[0.98] transition-all shadow-sm min-h-[44px]"
-          >
+          <button onClick={() => setFiltrosAbiertos(true)} className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-[#1A0087] text-white rounded-xl text-sm font-semibold hover:bg-[#130066] active:scale-[0.98] transition-all shadow-sm min-h-[44px]">
             <FunnelIcon className="w-4 h-4" />
             Filtros
           </button>
@@ -481,13 +418,13 @@ export default function CarteraPage() {
                 onLimpiar={() => setFiltros(FILTROS_INICIALES)}
                 extraLabel="Vendedor"
                 extraOpciones={vendedoresUnicos}
+                estadosDisponibles={ESTADOS_POR_ROL.cartera}
               />
             </div>
           </div>
         )}
       </header>
 
-      {/* CONTENIDO */}
       <main className="w-full px-4 sm:px-6 py-6">
         {loading ? (
           <div className="flex justify-center py-20">
@@ -495,8 +432,6 @@ export default function CarteraPage() {
           </div>
         ) : (
           <div className="space-y-8">
-
-            {/* POR APROBAR */}
             <section>
               <div className="flex items-center gap-3 mb-4">
                 <h2 className="text-lg font-bold text-[#232323]">🔥 Por aprobar</h2>
@@ -513,36 +448,24 @@ export default function CarteraPage() {
               ) : (
                 <div className="space-y-4">
                   {porAprobar.map(p => (
-                    <PedidoCardCompacta
-                      key={p.id}
-                      pedido={p}
-                      onClick={() => setPedidoAbierto(p.id)}
-                      acciones={renderAcciones(p)}
-                      esAdmin={rolActual === 'admin'}
-                    />
+                    <PedidoCardCompacta key={p.id} pedido={p} onClick={() => setPedidoAbierto(p.id)} acciones={renderAcciones(p)} esAdmin={rolActual === 'admin'} />
                   ))}
                 </div>
               )}
             </section>
 
-            {/* HISTORIAL */}
             <section>
               <div className="flex items-center justify-between gap-3 mb-4">
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg font-bold text-[#232323]">📚 Historial</h2>
-                  <span className="text-sm text-[#828282]">
-                    {historialFiltrado.length} {historialFiltrado.length === 1 ? 'pedido' : 'pedidos'}
-                  </span>
+                  <span className="text-sm text-[#828282]">{historialFiltrado.length} {historialFiltrado.length === 1 ? 'pedido' : 'pedidos'}</span>
                 </div>
               </div>
 
               {historialFiltrado.length === 0 ? (
                 <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
                   <p className="text-sm text-[#828282]">
-                    {filtros.busqueda.trim() ||
-                      filtros.fecha !== 'todo' ||
-                      filtros.estado !== 'todos' ||
-                      filtros.extra !== 'todos'
+                    {filtros.busqueda.trim() || filtros.fecha !== 'todo' || filtros.estado !== 'todos' || filtros.extra !== 'todos'
                       ? 'No hay pedidos que coincidan con los filtros'
                       : 'Aún no hay pedidos en el historial'}
                   </p>
@@ -552,38 +475,18 @@ export default function CarteraPage() {
                   {historialPorMes.map(([mesKey, itemsMes]) => {
                     const abierto = mesesAbiertos[mesKey] ?? false
                     return (
-                      <div
-                        key={mesKey}
-                        className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
-                      >
-                        <button
-                          onClick={() => toggleMes(mesKey)}
-                          className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-                        >
+                      <div key={mesKey} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                        <button onClick={() => toggleMes(mesKey)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
                           <div className="flex items-center gap-3">
-                            {abierto ? (
-                              <ChevronDownIcon className="w-5 h-5 text-[#828282]" />
-                            ) : (
-                              <ChevronRightIcon className="w-5 h-5 text-[#828282]" />
-                            )}
-                            <span className="font-semibold text-base text-[#232323]">
-                              📅 {getMesLabel(itemsMes[0].fecha)}
-                            </span>
-                            <span className="text-sm text-[#828282]">
-                              ({itemsMes.length})
-                            </span>
+                            {abierto ? <ChevronDownIcon className="w-5 h-5 text-[#828282]" /> : <ChevronRightIcon className="w-5 h-5 text-[#828282]" />}
+                            <span className="font-semibold text-base text-[#232323]">📅 {getMesLabel(itemsMes[0].fecha)}</span>
+                            <span className="text-sm text-[#828282]">({itemsMes.length})</span>
                           </div>
                         </button>
-
                         {abierto && (
                           <div className="p-4 pt-0 space-y-3">
                             {itemsMes.map(p => (
-                              <PedidoCardCompacta
-                                key={p.id}
-                                pedido={p}
-                                onClick={() => setPedidoAbierto(p.id)}
-                                esAdmin={rolActual === 'admin'}
-                              />
+                              <PedidoCardCompacta key={p.id} pedido={p} onClick={() => setPedidoAbierto(p.id)} esAdmin={rolActual === 'admin'} />
                             ))}
                           </div>
                         )}
@@ -597,7 +500,6 @@ export default function CarteraPage() {
         )}
       </main>
 
-      {/* FILTROS */}
       <FiltrosModal
         abierto={filtrosAbiertos}
         onClose={() => setFiltrosAbiertos(false)}
@@ -606,28 +508,20 @@ export default function CarteraPage() {
         extraLabel="Vendedor"
         extraOpciones={vendedoresUnicos}
         placeholderBusqueda="Buscar por COT, factura, cliente o vendedor..."
+        estadosDisponibles={ESTADOS_POR_ROL.cartera}
       />
 
-      {/* DETALLE */}
       {pedidoActual && (
         <PedidoDetalleModal
           pedido={pedidoActual}
           onClose={() => setPedidoAbierto(null)}
           onRefresh={fetchOrders}
           rolActual={rolActual}
-          onVerCotizacion={(id) => {
-            setPedidoAbierto(null)
-            setVerCotizacion(id)
-          }}
+          onVerCotizacion={(id) => { setPedidoAbierto(null); setVerCotizacion(id) }}
         />
       )}
 
-      {verCotizacion && (
-        <CotizacionPreview
-          pedidoId={verCotizacion}
-          onClose={() => setVerCotizacion(null)}
-        />
-      )}
+      {verCotizacion && <CotizacionPreview pedidoId={verCotizacion} onClose={() => setVerCotizacion(null)} />}
 
       {/* MODAL APROBAR */}
       {pedidoAprobando && (
@@ -640,82 +534,43 @@ export default function CarteraPage() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#232323]">Aprobar pedido</h3>
-                  <p className="text-xs text-[#828282] mt-0.5">
-                    Se generará la cotización oficial
-                  </p>
+                  <p className="text-xs text-[#828282] mt-0.5">Se generará la cotización oficial y se descontará el stock.</p>
                 </div>
               </div>
             </div>
-
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
                 <div className="flex justify-between text-[#828282]">
                   <span>Cliente</span>
-                  <span className="font-medium text-[#232323] truncate max-w-[60%] text-right">
-                    {pedidoAprobando.clientes?.nombre || 'N/A'}
-                  </span>
+                  <span className="font-medium text-[#232323] truncate max-w-[60%] text-right">{pedidoAprobando.clientes?.nombre || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between text-[#828282]">
                   <span>Productos</span>
-                  <span className="font-medium text-[#232323]">
-                    {pedidoAprobando.detalle_pedido.length}
-                  </span>
+                  <span className="font-medium text-[#232323]">{pedidoAprobando.detalle_pedido.length}</span>
                 </div>
                 <div className="flex justify-between text-[#828282]">
                   <span>Subtotal</span>
                   <span className="font-medium text-[#232323] tabular-nums">
-                    {formatCOP(pedidoAprobando.detalle_pedido.reduce(
-                      (acc, d: any) => acc + (d.precio_unitario ?? d.productos?.precio ?? 0) * d.cantidad_solicitada, 0
-                    ))}
+                    {formatCOP(pedidoAprobando.detalle_pedido.reduce((acc, d: any) => acc + (d.precio_unitario ?? d.productos?.precio ?? 0) * d.cantidad_solicitada, 0))}
                   </span>
                 </div>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-[#232323] mb-2">
-                  Observación (opcional)
-                </label>
-                <textarea
-                  value={observacionAprobar}
-                  onChange={(e) => setObservacionAprobar(e.target.value)}
-                  placeholder="Ej: Aprobado sin novedades..."
-                  rows={3}
-                  disabled={procesando === pedidoAprobando.id}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 resize-none"
-                />
+                <label className="block text-sm font-medium text-[#232323] mb-2">Observación (opcional)</label>
+                <textarea value={observacionAprobar} onChange={(e) => setObservacionAprobar(e.target.value)} placeholder="Ej: Aprobado sin novedades..." rows={3} disabled={procesando === pedidoAprobando.id} className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500 resize-none" />
               </div>
-
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-                <p className="text-xs text-blue-800">
-                  ℹ️ Al aprobar, se generará el número COT oficial y se subirá el PDF a Google Drive.
-                </p>
+                <p className="text-xs text-blue-800">ℹ️ Al aprobar, se generará el número COT oficial y se subirá el PDF a Google Drive.</p>
               </div>
             </div>
-
             <div className="border-t border-gray-100 p-4 flex flex-col-reverse sm:flex-row gap-2">
-              <button
-                onClick={() => setModalAprobar(null)}
-                disabled={procesando === pedidoAprobando.id}
-                className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 disabled:opacity-50 min-h-[48px]"
-              >
-                Cancelar
-              </button>
+              <button onClick={() => setModalAprobar(null)} disabled={procesando === pedidoAprobando.id} className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 disabled:opacity-50 min-h-[48px]">Cancelar</button>
               <div className="hidden sm:block flex-1" />
-              <button
-                onClick={confirmarAprobar}
-                disabled={procesando === pedidoAprobando.id}
-                className="w-full sm:w-auto px-5 py-3 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-50 min-h-[48px] flex items-center justify-center gap-2 transition-all"
-              >
+              <button onClick={confirmarAprobar} disabled={procesando === pedidoAprobando.id} className="w-full sm:w-auto px-5 py-3 bg-green-600 text-white rounded-xl text-sm font-semibold hover:bg-green-700 disabled:opacity-50 min-h-[48px] flex items-center justify-center gap-2 transition-all">
                 {procesando === pedidoAprobando.id ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Procesando...
-                  </>
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Procesando...</>
                 ) : (
-                  <>
-                    <CheckCircleIcon className="w-5 h-5" />
-                    Aprobar y generar
-                  </>
+                  <><CheckCircleIcon className="w-5 h-5" />Aprobar y generar</>
                 )}
               </button>
             </div>
@@ -727,8 +582,6 @@ export default function CarteraPage() {
       {pedidoRechazando && (
         <div className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-
-            {/* HEADER */}
             <div className="p-5 border-b border-gray-100">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
@@ -736,14 +589,10 @@ export default function CarteraPage() {
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#232323]">Rechazar pedido</h3>
-                  <p className="text-xs text-[#828282] mt-0.5">
-                    El pedido será rechazado y no continuará el flujo
-                  </p>
+                  <p className="text-xs text-[#828282] mt-0.5">El pedido será rechazado y no continuará el flujo</p>
                 </div>
               </div>
             </div>
-
-            {/* BODY */}
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-xs text-red-800">
                 <p className="font-semibold mb-2">⚠️ ¿Qué va a pasar?</p>
@@ -753,59 +602,21 @@ export default function CarteraPage() {
                   <li>Se registra el motivo en el historial</li>
                 </ul>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-[#232323] mb-2">
-                  Motivo del rechazo <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  value={motivoRechazar}
-                  onChange={(e) => {
-                    setMotivoRechazar(e.target.value)
-                    setErrorRechazar('')
-                  }}
-                  placeholder="Ej: Precios incorrectos, cantidades no coinciden..."
-                  rows={3}
-                  disabled={procesando === pedidoRechazando.id}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500 resize-none"
-                />
-                <p className="text-[10px] text-[#828282] mt-1">
-                  {motivoRechazar.trim().length} / 10 caracteres mínimo
-                </p>
+                <label className="block text-sm font-medium text-[#232323] mb-2">Motivo del rechazo <span className="text-red-500">*</span></label>
+                <textarea value={motivoRechazar} onChange={(e) => { setMotivoRechazar(e.target.value); setErrorRechazar('') }} placeholder="Ej: Precios incorrectos, cantidades no coinciden..." rows={3} disabled={procesando === pedidoRechazando.id} className="w-full px-4 py-3 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-500 resize-none" />
+                <p className="text-[10px] text-[#828282] mt-1">{motivoRechazar.trim().length} / 10 caracteres mínimo</p>
               </div>
-
-              {errorRechazar && (
-                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">
-                  {errorRechazar}
-                </div>
-              )}
+              {errorRechazar && <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-3 text-sm">{errorRechazar}</div>}
             </div>
-
-            {/* FOOTER */}
             <div className="border-t border-gray-100 p-4 flex flex-col-reverse sm:flex-row gap-2">
-              <button
-                onClick={() => setModalRechazar(null)}
-                disabled={procesando === pedidoRechazando.id}
-                className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 disabled:opacity-50 min-h-[48px]"
-              >
-                Cancelar
-              </button>
+              <button onClick={() => setModalRechazar(null)} disabled={procesando === pedidoRechazando.id} className="w-full sm:w-auto px-5 py-3 border border-gray-200 rounded-xl text-sm font-medium text-[#232323] bg-white hover:bg-gray-50 disabled:opacity-50 min-h-[48px]">Cancelar</button>
               <div className="hidden sm:block flex-1" />
-              <button
-                onClick={confirmarRechazar}
-                disabled={procesando === pedidoRechazando.id || motivoRechazar.trim().length < 10}
-                className="w-full sm:w-auto px-5 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed min-h-[48px] flex items-center justify-center gap-2 transition-all"
-              >
+              <button onClick={confirmarRechazar} disabled={procesando === pedidoRechazando.id || motivoRechazar.trim().length < 10} className="w-full sm:w-auto px-5 py-3 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed min-h-[48px] flex items-center justify-center gap-2 transition-all">
                 {procesando === pedidoRechazando.id ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Rechazando...
-                  </>
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Rechazando...</>
                 ) : (
-                  <>
-                    <XCircleIcon className="w-5 h-5" />
-                    Rechazar pedido
-                  </>
+                  <><XCircleIcon className="w-5 h-5" />Rechazar pedido</>
                 )}
               </button>
             </div>

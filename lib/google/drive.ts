@@ -4,6 +4,8 @@ import { Readable } from 'stream'
 import { getStoredAuth } from './oauth'
 import { createClient } from '@/lib/supabase/server'
 
+const CARPETA_RAIZ = 'Cotizaciones'
+
 async function getDriveClient() {
     const auth = await getStoredAuth()
 
@@ -56,7 +58,7 @@ export async function buscarOCrearSubcarpeta(
 }
 
 // ============================================================
-// 🆕 Organización automática por Año / Mes (hora Colombia)
+// Organización automática por Año / Mes / Día (hora Colombia)
 // ============================================================
 
 const MESES_ES = [
@@ -65,47 +67,51 @@ const MESES_ES = [
 ]
 
 /**
- * Devuelve { año: '2025', mes: 'Octubre' } en zona horaria America/Bogota.
+ * Devuelve { año, mes, dia } en zona horaria America/Bogota.
+ * El mes viene sin número (ej. 'Octubre') y el día como '19 Octubre'.
  */
-export function obtenerAñoYMes(fecha: Date = new Date()): {
+export function obtenerAñoMesDia(fecha: Date = new Date()): {
     año: string
     mes: string
+    dia: string
 } {
     const partes = new Intl.DateTimeFormat('es-CO', {
         timeZone: 'America/Bogota',
         year: 'numeric',
         month: 'numeric',
+        day: 'numeric'
     }).formatToParts(fecha)
 
     const año = partes.find(p => p.type === 'year')!.value
     const mesNumero = parseInt(partes.find(p => p.type === 'month')!.value, 10)
+    const diaNumero = partes.find(p => p.type === 'day')!.value.padStart(2, '0')
+
+    const nombreMes = MESES_ES[mesNumero - 1]
 
     return {
         año,
-        mes: MESES_ES[mesNumero - 1],
+        mes: nombreMes,
+        dia: `${diaNumero} ${nombreMes}`
     }
 }
 
 /**
- * Asegura la jerarquía Año/Mes en Drive y devuelve el ID de la carpeta del mes.
- * Cachea el folder_id en google_oauth_tokens.drive_folders (JSONB):
- *   { "2025-Octubre": "1XyZ...", "2025-Noviembre": "1AbC..." }
+ * Asegura la jerarquía RAIZ / BODEGA / AÑO / MES / DÍA en Drive y devuelve el ID de la carpeta final.
  */
 export async function obtenerCarpetaAñoMes(
+    bodegaNombre: string,
     fecha: Date = new Date()
 ): Promise<string> {
-    const { año, mes } = obtenerAñoYMes(fecha)
-    const clave = `${año}-${mes}` // ej: "2025-Octubre"
+    const { año, mes, dia } = obtenerAñoMesDia(fecha)
+    const clave = `${bodegaNombre}-${año}-${mes}-${dia}`
 
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('No autenticado')
 
     // 1️⃣ Leer caché
     const { data: tokenRow } = await supabase
         .from('google_oauth_tokens')
         .select('drive_folders')
-        .eq('user_id', user.id)
+        .eq('config_key', 'global')
         .maybeSingle()
 
     const cache: Record<string, string> = tokenRow?.drive_folders || {}
@@ -114,24 +120,29 @@ export async function obtenerCarpetaAñoMes(
         return cache[clave]
     }
 
-    // 2️⃣ No está en caché: crear/obtener en Drive
-    const carpetaAñoId = await buscarOCrearSubcarpetaEn(año)
+    // 2️⃣ No está en caché: crear la ruta completa
+    // Nivel 1: Cotizaciones
+    const carpetaRaizId = await buscarOCrearSubcarpetaEn(CARPETA_RAIZ)
+    // Nivel 2: Bodega
+    const carpetaBodegaId = await buscarOCrearSubcarpetaEn(bodegaNombre, carpetaRaizId)
+    // Nivel 3: Año
+    const carpetaAñoId = await buscarOCrearSubcarpetaEn(año, carpetaBodegaId)
+    // Nivel 4: Mes
     const carpetaMesId = await buscarOCrearSubcarpetaEn(mes, carpetaAñoId)
+    // Nivel 5: Día (Ej: "19 Octubre")
+    const carpetaDiaId = await buscarOCrearSubcarpetaEn(dia, carpetaMesId)
 
-    // 3️⃣ Guardar en caché (no bloquea si falla)
+    // 3️⃣ Guardar en caché
     await supabase
         .from('google_oauth_tokens')
         .update({
-            drive_folders: { ...cache, [clave]: carpetaMesId },
+            drive_folders: { ...cache, [clave]: carpetaDiaId },
         })
-        .eq('user_id', user.id)
+        .eq('config_key', 'global')
 
-    return carpetaMesId
+    return carpetaDiaId
 }
 
-/**
- * Sube un PDF a Drive
- */
 export async function subirPDFaDrive(
     nombreArchivo: string,
     pdfBuffer: Buffer,
@@ -167,8 +178,6 @@ export async function subirPDFaDrive(
 
     return {
         fileId,
-        url:
-            fileInfo.data.webViewLink ||
-            `https://drive.google.com/file/d/${fileId}/view`,
+        url: fileInfo.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
     }
 }
