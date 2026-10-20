@@ -14,28 +14,43 @@ export default function LoginPage() {
   const router = useRouter()
   const supabase = createClient()
 
+  // ✅ Leer parámetros de la URL (timeout / inactivo)
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search)
+
       if (params.get('reason') === 'timeout') {
         setError('⏱️ Tu sesión expiró por inactividad. Vuelve a iniciar sesión.')
-        // Limpiar el parámetro de la URL para que no se quede pegado
+      }
+
+      if (params.get('error') === 'inactivo') {
+        setError('🚫 Tu cuenta está inactiva. Contacta al administrador.')
+      }
+
+      // Limpiar query params para que no se queden pegados
+      if (params.get('reason') || params.get('error')) {
         window.history.replaceState({}, '', '/login')
       }
     }
   }, [])
-  
 
-  // ✅ CAMBIO 1: verifica requiere_cambio_password
+  // ✅ Verifica sesión activa + requiere_cambio_password + activo
   useEffect(() => {
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
         const { data: profile } = await supabase
           .from('usuarios')
-          .select('rol, requiere_cambio_password')
+          .select('rol, requiere_cambio_password, activo')
           .eq('id', session.user.id)
           .single()
+
+        // Si está inactivo → cerrar sesión y mostrar mensaje
+        if (profile && profile.activo === false) {
+          await supabase.auth.signOut()
+          setError('🚫 Tu cuenta está inactiva. Contacta al administrador.')
+          return
+        }
 
         if (profile?.requiere_cambio_password) {
           router.push('/cambiar-password')
@@ -52,11 +67,17 @@ export default function LoginPage() {
         const getProfile = async () => {
           const { data: profile } = await supabase
             .from('usuarios')
-            .select('rol, requiere_cambio_password')
+            .select('rol, requiere_cambio_password, activo')
             .eq('id', session.user.id)
             .single()
 
-          // ✅ CAMBIO 2: verifica requiere_cambio_password
+          // Si está inactivo → cerrar sesión y mostrar mensaje
+          if (profile && profile.activo === false) {
+            await supabase.auth.signOut()
+            setError('🚫 Tu cuenta está inactiva. Contacta al administrador.')
+            return
+          }
+
           if (profile?.requiere_cambio_password) {
             router.push('/cambiar-password')
             return
@@ -105,7 +126,7 @@ export default function LoginPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('usuarios')
-        .select('rol, nombre, requiere_cambio_password')
+        .select('rol, nombre, requiere_cambio_password, activo')
         .eq('id', data.user.id)
         .single()
 
@@ -115,7 +136,14 @@ export default function LoginPage() {
         return
       }
 
-      // ✅ CAMBIO 3: verifica requiere_cambio_password
+      // ✅ NUEVO: si está inactivo, cerrar sesión inmediatamente
+      if (profile.activo === false) {
+        await supabase.auth.signOut()
+        setError('🚫 Tu cuenta está inactiva. Contacta al administrador.')
+        setLoading(false)
+        return
+      }
+
       if (profile.requiere_cambio_password) {
         router.push('/cambiar-password')
         return

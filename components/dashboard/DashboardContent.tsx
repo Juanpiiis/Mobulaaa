@@ -13,7 +13,7 @@ import {
   ArrowLeftOnRectangleIcon, ShoppingCartIcon, CreditCardIcon,
   DocumentTextIcon, BeakerIcon, CalculatorIcon, ClipboardIcon,
   ChevronDownIcon, BellIcon, PlusIcon,
-  SunIcon, MoonIcon,
+  SunIcon, MoonIcon, ArrowLeftIcon,
 } from '@heroicons/react/24/outline'
 
 /* ============================================================
@@ -37,6 +37,8 @@ const navigationConfig = {
       { name: 'Pedidos de Cartera', href: '/cartera', icon: ClipboardDocumentListIcon },
       { name: 'Movimientos de bodega', href: '/admin/movimientos', icon: ArrowsRightLeftIcon },
       { name: 'Entrada Mercancía', href: '/admin/entradas', icon: ClipboardIcon },
+      { name: 'Historial del Sistema', href: '/admin/logs', icon: ClipboardDocumentListIcon },
+
     ]
   },
   bodeguero: {
@@ -172,14 +174,24 @@ export default function DashboardContent({ children, rol }: { children: React.Re
     }
   }
 
-  // ✅ ¿Estamos en la página de bodegas?
+  const rutasPrincipales = ['/admin', '/vendedor', '/bodeguero', '/cartera']
+  const mostrarBotonAtras = !rutasPrincipales.includes(pathname)
+
   const esPaginaBodegas = pathname === '/admin/bodegas'
 
-  // ✅ Reglas del selector de bodega:
-  // - 0 bodegas → mostrar botón "Crear primera bodega"
-  // - 1 bodega → mostrar nombre fijo (no dropdown)
-  // - 2+ bodegas → mostrar dropdown
   const renderSelector = () => {
+    if (rol !== 'admin' && bodegas.length === 0) {
+      return (
+        <div className="sidebar-store-selector">
+          <p className="sidebar-store-selector__label">Tienda / Bodega</p>
+          <div className="bg-amber-900/40 border border-amber-500/40 text-amber-100 px-3 py-2.5 rounded-xl text-sm font-medium min-h-[44px] flex flex-col justify-center">
+            <span className="font-semibold">Sin bodega asignada</span>
+            <span className="text-xs text-amber-200/80">Pide al admin que te asigne una</span>
+          </div>
+        </div>
+      )
+    }
+
     if (bodegas.length === 0) {
       return (
         <div className="sidebar-store-selector">
@@ -206,7 +218,7 @@ export default function DashboardContent({ children, rol }: { children: React.Re
       )
     }
 
-    // 2+ bodegas → dropdown normal
+    // ✅ Dropdown sin la opción "Sin seleccionar"
     return (
       <div className="sidebar-store-selector">
         <p className="sidebar-store-selector__label">Tienda / Bodega</p>
@@ -215,11 +227,15 @@ export default function DashboardContent({ children, rol }: { children: React.Re
             className="sidebar-store-selector__select"
             value={tiendaActual?.id || ''}
             onChange={e => {
+              // Si por alguna razón llega vacío, forzamos la primera bodega
+              if (!e.target.value) {
+                setTiendaActual(bodegas[0] || null)
+                return
+              }
               const bodega = bodegas.find(b => b.id === e.target.value) || null
               setTiendaActual(bodega)
             }}
           >
-            <option value="">Sin seleccionar</option>
             {bodegas.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
           </select>
           <ChevronDownIcon className="sidebar-store-selector__chevron" />
@@ -254,7 +270,6 @@ export default function DashboardContent({ children, rol }: { children: React.Re
           </p>
         </div>
 
-        {/* ✅ Selector condicional */}
         {renderSelector()}
 
         <nav className="sidebar-nav">
@@ -289,7 +304,7 @@ export default function DashboardContent({ children, rol }: { children: React.Re
       <div className="dashboard-main-wrapper">
 
         <header className="dashboard-topbar pt-[env(safe-area-inset-top)] min-h-[calc(4rem+env(safe-area-inset-top))]">
-          <div className="topbar-left">
+          <div className="topbar-left flex items-center gap-2">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="topbar-hamburger w-11 h-11 flex items-center justify-center rounded-xl active:scale-[0.98]"
@@ -299,6 +314,18 @@ export default function DashboardContent({ children, rol }: { children: React.Re
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
+
+            {mostrarBotonAtras && (
+              <button
+                onClick={() => router.back()}
+                className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 active:scale-[0.95] text-gray-700 transition-all dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700"
+                aria-label="Volver atrás"
+                title="Volver atrás"
+              >
+                <ArrowLeftIcon className="w-5 h-5 stroke-[2.5]" />
+              </button>
+            )}
+
             <h1 className="topbar-greeting">Bienvenido 👋</h1>
           </div>
 
@@ -312,7 +339,19 @@ export default function DashboardContent({ children, rol }: { children: React.Re
         </header>
 
         <main className="dashboard-main">
-          {(!tiendaActual && !esPaginaBodegas && bodegas.length > 0) ? (
+          {rol !== 'admin' && bodegas.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state__card">
+                <div className="empty-state__icon-wrapper">
+                  <BuildingStorefrontIcon className="empty-state__icon" />
+                </div>
+                <p className="empty-state__title">Sin bodega asignada</p>
+                <p className="empty-state__description">
+                  No tienes una bodega asignada. Pídele al administrador que te asigne una para poder operar.
+                </p>
+              </div>
+            </div>
+          ) : (!tiendaActual && !esPaginaBodegas && bodegas.length > 0) ? (
             <div className="empty-state">
               <div className="empty-state__card">
                 <div className="empty-state__icon-wrapper">

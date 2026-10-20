@@ -26,6 +26,7 @@ interface Producto {
     precio_mayorista: number | null
     precio_tat: number | null
     activo: boolean
+    eliminado: boolean // ✅ Añadido para que TypeScript no marque error
     congelado_manual: boolean
     limite_congelado: number | null
 }

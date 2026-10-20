@@ -8,8 +8,6 @@ import {
   PlusIcon,
   MagnifyingGlassIcon,
   PencilSquareIcon,
-  TrashIcon,
-  ArrowPathIcon,
   LockClosedIcon,
 } from '@heroicons/react/24/outline'
 
@@ -80,7 +78,6 @@ export default function ProductosPage() {
   const [mostrarSoloCongelados, setMostrarSoloCongelados] = useState(false)
 
   const [showModal, setShowModal] = useState(false)
-  const [editando, setEditando] = useState<Producto | null>(null)
   const [form, setForm] = useState({
     nombre: '',
     color: '',
@@ -89,8 +86,7 @@ export default function ProductosPage() {
     bodega_id: '',
     cantidad: '0',
   })
-
-  const [eliminando, setEliminando] = useState<Producto | null>(null)
+  const [guardando, setGuardando] = useState(false)
 
   const supabase = createClient()
   const router = useRouter()
@@ -175,71 +171,58 @@ export default function ProductosPage() {
     }
   }
 
+  // ─────────────────────────────────────
+  // CREAR PRODUCTO
+  // ─────────────────────────────────────
   const handleGuardar = async () => {
+    setGuardando(true)
     const nombreCompleto = form.color
       ? `${form.nombre} ${form.color}`.toUpperCase()
       : form.nombre.toUpperCase()
 
-    if (editando) {
-      const { error } = await supabase
-        .from('productos')
-        .update({
-          nombre: nombreCompleto,
-          categoria: form.categoria,
-          codigo: form.codigo,
-          descripcion: form.color,
+    const { data: producto, error: errIns } = await supabase
+      .from('productos')
+      .insert({
+        nombre: nombreCompleto,
+        categoria: form.categoria,
+        codigo: form.codigo,
+        descripcion: form.color,
+        activo: true,
+      })
+      .select()
+      .single()
+
+    if (errIns || !producto) {
+      console.error('Error creando producto:', errIns)
+      setErrorCarga('No se pudo crear el producto: ' + (errIns?.message || 'Error desconocido'))
+      setGuardando(false)
+      return
+    }
+
+    if (form.bodega_id) {
+      const cantidad = parseInt(form.cantidad) || 0
+      if (cantidad > 0) {
+        const { error: errInv } = await supabase.rpc('ajustar_stock', {
+          p_producto: producto.id,
+          p_bodega: form.bodega_id,
+          p_delta: cantidad,
+          p_tipo: 'entrada',
+          p_obs: 'Carga inicial al crear producto',
         })
-        .eq('id', editando.id)
-
-      if (error) {
-        console.error('Error actualizando producto:', error)
-        setErrorCarga('No se pudo actualizar el producto: ' + error.message)
-        return
-      }
-    } else {
-      const { data: producto, error: errIns } = await supabase
-        .from('productos')
-        .insert({
-          nombre: nombreCompleto,
-          categoria: form.categoria,
-          codigo: form.codigo,
-          descripcion: form.color,
-          activo: true,
-        })
-        .select()
-        .single()
-
-      if (errIns || !producto) {
-        console.error('Error creando producto:', errIns)
-        setErrorCarga('No se pudo crear el producto: ' + (errIns?.message || 'Error desconocido'))
-        return
-      }
-
-      if (form.bodega_id) {
-        const cantidad = parseInt(form.cantidad) || 0
-        if (cantidad > 0) {
-          const { error: errInv } = await supabase.rpc('ajustar_stock', {
-            p_producto: producto.id,
-            p_bodega: form.bodega_id,
-            p_delta: cantidad,
-            p_tipo: 'entrada',
-            p_obs: 'Carga inicial al crear producto',
-          })
-          if (errInv) {
-            console.error('Error creando inventario inicial:', errInv)
-            setErrorCarga('Producto creado, pero falló el inventario inicial: ' + errInv.message)
-          }
+        if (errInv) {
+          console.error('Error creando inventario inicial:', errInv)
+          setErrorCarga('Producto creado, pero falló el inventario inicial: ' + errInv.message)
         }
       }
     }
 
     cerrarModal()
     cargarDatos()
+    setGuardando(false)
   }
 
   const cerrarModal = () => {
     setShowModal(false)
-    setEditando(null)
     setForm({
       nombre: '',
       color: '',
@@ -250,23 +233,11 @@ export default function ProductosPage() {
     })
   }
 
-  const handleEditarRapido = (p: Producto) => {
-    setEditando(p)
-    setForm({
-      nombre: p.nombre,
-      color: p.descripcion || '',
-      categoria: p.categoria || '',
-      codigo: p.codigo || '',
-      bodega_id: '',
-      cantidad: '0',
-    })
-    setShowModal(true)
-  }
-
   const handleEditarCompleto = (p: Producto) => {
     router.push(`/admin/productos/${p.id}/editar`)
   }
 
+  // ✅ Única acción de estado: Activar / Desactivar
   const handleToggleActivo = async (p: Producto) => {
     const { error } = await supabase
       .from('productos')
@@ -281,47 +252,40 @@ export default function ProductosPage() {
     cargarDatos()
   }
 
-  const confirmarEliminar = async () => {
-    if (!eliminando) return
-    const { error } = await supabase.from('productos').update({ activo: false }).eq('id', eliminando.id)
-    if (error) {
-      console.error('Error eliminando producto:', error)
-      setErrorCarga('No se pudo eliminar el producto: ' + error.message)
-      setEliminando(null)
-      return
-    }
-    setEliminando(null)
-    cargarDatos()
-  }
+  const filtrados = useMemo(() => {
+    return productos.filter((p) => {
+      // 1. Filtro de inactivos
+      if (!mostrarInactivos && !p.activo) return false
 
-  const filtrados = productos.filter((p) => {
-    if (!mostrarInactivos && !p.activo) return false
+      // 2. Filtro de congelados
+      const congelado = esProductoCongelado(getCongeladoInfo(p))
+      if (mostrarSoloCongelados && !congelado) return false
 
-    const congelado = esProductoCongelado(getCongeladoInfo(p))
-    if (mostrarSoloCongelados && !congelado) return false
+      // 3. Filtro de categoría
+      if (categoriaFiltro) {
+        const ce = normalizar(p.categoria_excel)
+        const c = normalizar(p.categoria)
+        const filtro = normalizar(categoriaFiltro)
+        const match = ce === filtro || c === filtro
+        if (!match) return false
+      }
 
-    if (categoriaFiltro) {
-      const ce = normalizar(p.categoria_excel)
-      const c = normalizar(p.categoria)
-      const filtro = normalizar(categoriaFiltro)
-      const match = ce === filtro || c === filtro
-      if (!match) return false
-    }
+      // 4. Búsqueda
+      if (busqueda.trim()) {
+        const q = normalizar(busqueda).toLowerCase()
+        const hayMatch =
+          normalizar(p.nombre).toLowerCase().includes(q) ||
+          normalizar(p.codigo).toLowerCase().includes(q) ||
+          normalizar(p.referencia_excel).toLowerCase().includes(q) ||
+          normalizar(p.marca).toLowerCase().includes(q) ||
+          normalizar(p.categoria_excel).toLowerCase().includes(q) ||
+          normalizar(p.categoria).toLowerCase().includes(q)
+        if (!hayMatch) return false
+      }
 
-    if (busqueda.trim()) {
-      const q = normalizar(busqueda).toLowerCase()
-      const hayMatch =
-        normalizar(p.nombre).toLowerCase().includes(q) ||
-        normalizar(p.codigo).toLowerCase().includes(q) ||
-        normalizar(p.referencia_excel).toLowerCase().includes(q) ||
-        normalizar(p.marca).toLowerCase().includes(q) ||
-        normalizar(p.categoria_excel).toLowerCase().includes(q) ||
-        normalizar(p.categoria).toLowerCase().includes(q)
-      if (!hayMatch) return false
-    }
-
-    return true
-  })
+      return true
+    })
+  }, [productos, busqueda, categoriaFiltro, mostrarInactivos, mostrarSoloCongelados, stockPorProducto, tiendaActual])
 
   const formatPrecio = (n: number | null) => {
     if (n === null || n === undefined) return '—'
@@ -373,6 +337,7 @@ export default function ProductosPage() {
           </div>
         )}
 
+        {/* FILTROS */}
         <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="relative">
@@ -422,6 +387,7 @@ export default function ProductosPage() {
           </div>
         </div>
 
+        {/* LISTA DE PRODUCTOS */}
         {loading && (
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
@@ -472,7 +438,7 @@ export default function ProductosPage() {
                           </span>
                         )}
                         {!p.activo && (
-                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-600">
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
                             Inactivo
                           </span>
                         )}
@@ -530,34 +496,20 @@ export default function ProductosPage() {
                     <button
                       onClick={() => handleEditarCompleto(p)}
                       className="flex-1 min-h-[36px] text-xs font-semibold text-[#1A0087] bg-[#1A0087]/5 hover:bg-[#1A0087]/10 rounded-lg transition-colors flex items-center justify-center gap-1"
-                      title="Editar completo (precios, referencia, congelado)"
+                      title="Editar completo"
                     >
                       <PencilSquareIcon className="w-3.5 h-3.5" />
                       Editar
                     </button>
                     <button
-                      onClick={() => handleEditarRapido(p)}
-                      className="min-h-[36px] px-2 text-xs font-medium text-[#828282] bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-                      title="Edición rápida"
-                    >
-                      <ArrowPathIcon className="w-3.5 h-3.5" />
-                    </button>
-                    <button
                       onClick={() => handleToggleActivo(p)}
-                      className={`min-h-[36px] px-2 text-xs font-medium rounded-lg transition-colors ${p.activo
-                        ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
-                        : 'text-green-600 bg-green-50 hover:bg-green-100'
+                      className={`min-h-[36px] px-4 text-xs font-medium rounded-lg transition-colors ${p.activo
+                          ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                          : 'text-green-600 bg-green-50 hover:bg-green-100'
                         }`}
                       title={p.activo ? 'Desactivar' : 'Activar'}
                     >
                       {p.activo ? 'Off' : 'On'}
-                    </button>
-                    <button
-                      onClick={() => setEliminando(p)}
-                      className="min-h-[36px] px-2 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
-                      title="Eliminar"
-                    >
-                      <TrashIcon className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -567,18 +519,16 @@ export default function ProductosPage() {
         )}
       </main>
 
-      {/* MODAL: Crear / Editar rápido */}
+      {/* MODAL: Crear Producto */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="p-5 border-b border-gray-100">
               <h2 className="text-lg font-bold text-[#232323]">
-                {editando ? 'Editar Producto (rápido)' : 'Nuevo Producto'}
+                Nuevo Producto
               </h2>
               <p className="text-xs text-[#828282] mt-0.5">
-                {editando
-                  ? 'Para editar precios, referencia y congelado, usá "Editar" (botón azul)'
-                  : 'Para más campos, usá "Editar" después de crearlo'}
+                Para precios, referencia y congelado, usá "Editar" después de crearlo
               </p>
             </div>
 
@@ -616,33 +566,29 @@ export default function ProductosPage() {
                 ))}
               </select>
 
-              {!editando && (
-                <>
-                  <select
-                    className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 bg-white"
-                    value={form.bodega_id}
-                    onChange={(e) =>
-                      setForm({ ...form, bodega_id: e.target.value })
-                    }
-                  >
-                    <option value="">Seleccionar tienda/bodega</option>
-                    {bodegas.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.nombre}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
-                    type="number"
-                    placeholder="Cantidad inicial"
-                    value={form.cantidad}
-                    onChange={(e) =>
-                      setForm({ ...form, cantidad: e.target.value })
-                    }
-                  />
-                </>
-              )}
+              <select
+                className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 bg-white"
+                value={form.bodega_id}
+                onChange={(e) =>
+                  setForm({ ...form, bodega_id: e.target.value })
+                }
+              >
+                <option value="">Seleccionar tienda/bodega</option>
+                {bodegas.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.nombre}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
+                type="number"
+                placeholder="Cantidad inicial"
+                value={form.cantidad}
+                onChange={(e) =>
+                  setForm({ ...form, cantidad: e.target.value })
+                }
+              />
             </div>
 
             <div className="p-5 border-t border-gray-100 flex gap-2 justify-end">
@@ -654,43 +600,10 @@ export default function ProductosPage() {
               </button>
               <button
                 onClick={handleGuardar}
-                className="min-h-[44px] px-5 py-2.5 text-sm font-semibold text-white bg-[#1A0087] hover:bg-[#130066] rounded-xl transition-all"
+                disabled={guardando}
+                className="min-h-[44px] px-5 py-2.5 text-sm font-semibold text-white bg-[#1A0087] hover:bg-[#130066] rounded-xl transition-all disabled:opacity-50"
               >
-                Guardar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: Confirmar eliminar */}
-      {eliminando && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm">
-            <div className="p-5 text-center">
-              <TrashIcon className="w-12 h-12 text-red-500 mx-auto mb-3" />
-              <h2 className="text-lg font-bold text-[#232323]">
-                ¿Eliminar producto?
-              </h2>
-              <p className="text-sm text-[#828282] mt-1">
-                {eliminando.nombre}
-              </p>
-              <p className="text-xs text-[#828282] mt-2">
-                Se marcará como inactivo (no se borra de la BD)
-              </p>
-            </div>
-            <div className="p-5 border-t border-gray-100 flex gap-2">
-              <button
-                onClick={() => setEliminando(null)}
-                className="flex-1 min-h-[44px] py-2.5 text-sm font-medium text-[#232323] bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmarEliminar}
-                className="flex-1 min-h-[44px] py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition-all"
-              >
-                Eliminar
+                {guardando ? 'Creando...' : 'Crear Producto'}
               </button>
             </div>
           </div>

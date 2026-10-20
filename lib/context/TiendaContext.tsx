@@ -73,9 +73,24 @@ export function TiendaProvider({ children }: { children: ReactNode }) {
 
     setTiendaActual((prev) => {
       if (lista.length === 0) return null
-      if (!prev) return lista[0]
-      const existe = lista.find((b) => b.id === prev.id)
-      return existe || lista[0]
+
+      // Si ya había una seleccionada y sigue existiendo, la mantenemos
+      if (prev) {
+        const existe = lista.find((b) => b.id === prev.id)
+        if (existe) return existe
+      }
+
+      // ✅ Si es admin, buscar Bogotá por defecto
+      if (esAdmin) {
+        const bogota = lista.find((b) =>
+          b.nombre.toLowerCase().includes('bogotá') ||
+          b.nombre.toLowerCase().includes('bogota')
+        )
+        if (bogota) return bogota
+      }
+
+      // Si no hay Bogotá o no es admin, toma la primera
+      return lista[0]
     })
   }, [supabase])
 

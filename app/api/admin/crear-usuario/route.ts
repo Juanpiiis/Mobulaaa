@@ -13,15 +13,24 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: NextRequest) {
     try {
-        // 1. Verificar admin
+        // 1. Verificar admin autenticado Y activo
         const supabase = await createServerClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
 
         const { data: perfil } = await supabase
-            .from('usuarios').select('rol').eq('id', user.id).single()
-        if (perfil?.rol !== 'admin') {
+            .from('usuarios')
+            .select('rol, activo')
+            .eq('id', user.id)
+            .single()
+
+        if (!perfil || perfil.rol !== 'admin') {
             return NextResponse.json({ error: 'Solo admins' }, { status: 403 })
+        }
+
+        // ✅ NUEVO: el admin que hace la petición también debe estar activo
+        if (perfil.activo === false) {
+            return NextResponse.json({ error: 'Tu cuenta está inactiva' }, { status: 403 })
         }
 
         // 2. Leer body (con bodegas_ids array)
@@ -66,7 +75,7 @@ export async function POST(req: NextRequest) {
                 nombre,
                 email,
                 rol,
-                bodega_id: bodegaPrimera,  // compatibilidad
+                bodega_id: bodegaPrimera,
                 activo: true,
                 requiere_cambio_password: true,
             })
