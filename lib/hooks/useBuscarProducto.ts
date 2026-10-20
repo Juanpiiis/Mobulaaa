@@ -80,10 +80,14 @@ export function useBuscarProducto(
                     .from('inventario')
                     .select(`
                         cantidad_disponible,
-                        congelado_manual,
-                        limite_congelado,
                         productos!inner(
-                            id, nombre, precio, categoria, sku
+                            id, 
+                            nombre, 
+                            precio, 
+                            categoria, 
+                            sku,
+                            congelado_manual,
+                            limite_congelado
                         )
                     `)
                     .eq('bodega_id', bodegaId)
@@ -104,8 +108,9 @@ export function useBuscarProducto(
                         ?.map((i: any) => ({
                             ...i.productos,
                             stock_disponible: i.cantidad_disponible || 0,
-                            congelado_manual: i.congelado_manual ?? false,
-                            limite_congelado: i.limite_congelado ?? null,
+                            // ✅ Ahora los leemos desde i.productos (donde sí existen en BD)
+                            congelado_manual: i.productos.congelado_manual ?? false,
+                            limite_congelado: i.productos.limite_congelado ?? null,
                         }))
                         .filter((p: any) => p.id) || []
 
