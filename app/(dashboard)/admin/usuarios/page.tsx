@@ -1,4 +1,5 @@
 'use client'
+
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import {
@@ -21,7 +22,7 @@ interface Usuario {
   bodega_id: string | null
   activo: boolean
   requiere_cambio_password?: boolean
-  bodegas_asignadas?: string[]  // ✅ NUEVO: array de IDs
+  bodegas_asignadas?: string[]
 }
 
 interface Bodega {
@@ -43,7 +44,6 @@ export default function UsuariosPage() {
   const [success, setSuccess] = useState('')
   const [showPassword, setShowPassword] = useState(false)
 
-  // ✅ NUEVO: form con bodegas_ids (array)
   const [form, setForm] = useState({
     nombre: '',
     email: '',
@@ -54,38 +54,19 @@ export default function UsuariosPage() {
 
   const supabase = createClient()
 
-  // ─────────────────────────────────────
-  // CARGAR DATOS
-  // ─────────────────────────────────────
   const cargarDatos = async () => {
     setLoading(true)
 
-    // 1. Cargar usuarios
-    const { data: u } = await supabase
-      .from('usuarios')
-      .select('*')
-      .order('nombre')
+    const { data: u } = await supabase.from('usuarios').select('*').order('nombre')
+    const { data: b } = await supabase.from('bodegas').select('id, nombre').eq('activo', true).order('nombre')
+    const { data: asignaciones } = await supabase.from('usuario_bodegas').select('usuario_id, bodega_id')
 
-    // 2. Cargar bodegas activas
-    const { data: b } = await supabase
-      .from('bodegas')
-      .select('id, nombre')
-      .eq('activo', true)
-      .order('nombre')
-
-    // 3. Cargar asignaciones (usuario_bodegas)
-    const { data: asignaciones } = await supabase
-      .from('usuario_bodegas')
-      .select('usuario_id, bodega_id')
-
-    // 4. Agrupar asignaciones por usuario
     const asignacionesMap: Record<string, string[]> = {}
       ; (asignaciones || []).forEach((a: any) => {
         if (!asignacionesMap[a.usuario_id]) asignacionesMap[a.usuario_id] = []
         asignacionesMap[a.usuario_id].push(a.bodega_id)
       })
 
-    // 5. Combinar
     const usuariosConBodegas = (u || []).map((user: any) => ({
       ...user,
       bodegas_asignadas: asignacionesMap[user.id] || [],
@@ -100,9 +81,6 @@ export default function UsuariosPage() {
     cargarDatos()
   }, [])
 
-  // ─────────────────────────────────────
-  // GENERAR CONTRASEÑA ALEATORIA
-  // ─────────────────────────────────────
   const generarPassword = () => {
     const mayusculas = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
     const minusculas = 'abcdefghijkmnopqrstuvwxyz'
@@ -121,14 +99,10 @@ export default function UsuariosPage() {
     }
 
     pass = pass.split('').sort(() => Math.random() - 0.5).join('')
-
     setForm((f) => ({ ...f, password: pass }))
     setShowPassword(true)
   }
 
-  // ─────────────────────────────────────
-  // ABRIR MODAL NUEVO
-  // ─────────────────────────────────────
   const abrirNuevo = () => {
     setEditando(null)
     setForm({ nombre: '', email: '', password: '', rol: 'vendedor', bodegas_ids: [] })
@@ -138,9 +112,6 @@ export default function UsuariosPage() {
     setShowModal(true)
   }
 
-  // ─────────────────────────────────────
-  // ABRIR MODAL EDITAR
-  // ─────────────────────────────────────
   const abrirEditar = (usuario: Usuario) => {
     setEditando(usuario)
     setForm({
@@ -156,9 +127,6 @@ export default function UsuariosPage() {
     setShowModal(true)
   }
 
-  // ─────────────────────────────────────
-  // TOGGLE BODEGA
-  // ─────────────────────────────────────
   const toggleBodega = (bodegaId: string) => {
     setForm((f) => ({
       ...f,
@@ -166,11 +134,9 @@ export default function UsuariosPage() {
         ? f.bodegas_ids.filter((id) => id !== bodegaId)
         : [...f.bodegas_ids, bodegaId],
     }))
+    setError('') // Limpiar error al seleccionar bodega
   }
 
-  // ─────────────────────────────────────
-  // GUARDAR (crear o editar)
-  // ─────────────────────────────────────
   const handleGuardar = async () => {
     setError('')
     setSuccess('')
@@ -181,6 +147,12 @@ export default function UsuariosPage() {
     }
     if (!form.email.trim()) {
       setError('El email es obligatorio')
+      return
+    }
+
+    // 🔥 VALIDACIÓN ESTRICTA: No se puede guardar sin bodega (excepto admin)
+    if (form.rol !== 'admin' && form.bodegas_ids.length === 0) {
+      setError('Debes asignar al menos una bodega a este usuario para poder guardarlo.')
       return
     }
 
@@ -198,7 +170,6 @@ export default function UsuariosPage() {
     setGuardando(true)
 
     try {
-      // ─── NUEVO USUARIO ───
       if (!editando) {
         const response = await fetch('/api/admin/crear-usuario', {
           method: 'POST',
@@ -208,7 +179,7 @@ export default function UsuariosPage() {
             nombre: form.nombre.trim(),
             password: form.password,
             rol: form.rol,
-            bodegas_ids: form.bodegas_ids,  // ✅ array
+            bodegas_ids: form.bodegas_ids,
           }),
         })
 
@@ -225,16 +196,13 @@ export default function UsuariosPage() {
           setShowModal(false)
           cargarDatos()
         }, 1500)
-      }
-      // ─── EDITAR USUARIO ───
-      else {
-        // 1. Actualizar datos básicos
+      } else {
         const { error: err } = await supabase
           .from('usuarios')
           .update({
             nombre: form.nombre.trim(),
             rol: form.rol,
-            bodega_id: form.bodegas_ids[0] || null,  // compatibilidad
+            bodega_id: form.bodegas_ids[0] || null,
           })
           .eq('id', editando.id)
 
@@ -244,13 +212,8 @@ export default function UsuariosPage() {
           return
         }
 
-        // 2. Borrar asignaciones viejas
-        await supabase
-          .from('usuario_bodegas')
-          .delete()
-          .eq('usuario_id', editando.id)
+        await supabase.from('usuario_bodegas').delete().eq('usuario_id', editando.id)
 
-        // 3. Insertar asignaciones nuevas
         if (form.bodegas_ids.length > 0) {
           const { error: errAsig } = await supabase
             .from('usuario_bodegas')
@@ -281,9 +244,6 @@ export default function UsuariosPage() {
     }
   }
 
-  // ─────────────────────────────────────
-  // DESACTIVAR USUARIO
-  // ─────────────────────────────────────
   const handleDesactivar = async (usuario: Usuario) => {
     if (!confirm(`¿Desactivar a ${usuario.nombre}? No podrá iniciar sesión.`)) return
 
@@ -300,9 +260,6 @@ export default function UsuariosPage() {
     cargarDatos()
   }
 
-  // ─────────────────────────────────────
-  // REACTIVAR
-  // ─────────────────────────────────────
   const handleReactivar = async (usuario: Usuario) => {
     const { error: err } = await supabase
       .from('usuarios')
@@ -317,9 +274,6 @@ export default function UsuariosPage() {
     cargarDatos()
   }
 
-  // ─────────────────────────────────────
-  // COLORES POR ROL
-  // ─────────────────────────────────────
   const rolColor: Record<string, string> = {
     admin: 'bg-purple-100 text-purple-700 border-purple-200',
     bodeguero: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -327,9 +281,9 @@ export default function UsuariosPage() {
     cartera: 'bg-yellow-100 text-yellow-700 border-yellow-200',
   }
 
-  // ─────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────
+  // Saber si el botón de guardar debe estar deshabilitado visualmente
+  const guardarBloqueado = !editando && form.rol !== 'admin' && form.bodegas_ids.length === 0
+
   return (
     <div className="p-4 sm:p-6 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mb-6">
@@ -413,7 +367,7 @@ export default function UsuariosPage() {
                           )}
                         </div>
                       ) : (
-                        <span className="text-xs text-gray-400">Sin bodegas</span>
+                        <span className="text-xs text-red-400 font-medium">Sin bodegas</span>
                       )}
                     </td>
                     <td className="p-3">
@@ -461,13 +415,9 @@ export default function UsuariosPage() {
         </div>
       )}
 
-      {/* ───────────────────────────────────── */}
-      {/* MODAL CREAR / EDITAR */}
-      {/* ───────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
           <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
-            {/* Header */}
             <div className="shrink-0 flex items-center justify-between p-5 border-b border-gray-100">
               <div>
                 <h2 className="text-lg font-bold text-[#232323]">
@@ -486,12 +436,9 @@ export default function UsuariosPage() {
               </button>
             </div>
 
-            {/* Contenido */}
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-[#232323] mb-1.5">
-                  Nombre completo *
-                </label>
+                <label className="block text-sm font-medium text-[#232323] mb-1.5">Nombre completo *</label>
                 <input
                   className={inputClass}
                   placeholder="Ej: Juan Pérez"
@@ -502,9 +449,7 @@ export default function UsuariosPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-[#232323] mb-1.5">
-                  Email *
-                </label>
+                <label className="block text-sm font-medium text-[#232323] mb-1.5">Email *</label>
                 <input
                   className={inputClass}
                   type="email"
@@ -514,19 +459,12 @@ export default function UsuariosPage() {
                   disabled={!!editando}
                   inputMode="email"
                 />
-                {editando && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    El email no se puede cambiar
-                  </p>
-                )}
+                {editando && <p className="text-xs text-gray-400 mt-1">El email no se puede cambiar</p>}
               </div>
 
-              {/* Contraseña - solo al crear */}
               {!editando && (
                 <div>
-                  <label className="block text-sm font-medium text-[#232323] mb-1.5">
-                    Contraseña temporal *
-                  </label>
+                  <label className="block text-sm font-medium text-[#232323] mb-1.5">Contraseña temporal *</label>
                   <div className="relative">
                     <input
                       className={`${inputClass} pr-11`}
@@ -552,16 +490,12 @@ export default function UsuariosPage() {
                     <KeyIcon className="w-3 h-3" />
                     Generar contraseña segura
                   </button>
-                  <p className="text-xs text-gray-400 mt-1">
-                    El usuario deberá cambiarla al primer login
-                  </p>
+                  <p className="text-xs text-gray-400 mt-1">El usuario deberá cambiarla al primer login</p>
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-[#232323] mb-1.5">
-                  Rol *
-                </label>
+                <label className="block text-sm font-medium text-[#232323] mb-1.5">Rol *</label>
                 <select
                   className={inputClass}
                   value={form.rol}
@@ -574,11 +508,10 @@ export default function UsuariosPage() {
                 </select>
               </div>
 
-              {/* ✅ CHECKBOXES DE BODEGAS */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-[#232323]">
-                    Bodegas asignadas
+                  <label className={`block text-sm font-medium ${form.rol !== 'admin' && form.bodegas_ids.length === 0 ? 'text-red-500' : 'text-[#232323]'}`}>
+                    Bodegas asignadas {form.rol !== 'admin' && '*'}
                   </label>
                   <span className="text-xs text-[#828282]">
                     {form.bodegas_ids.length} seleccionada{form.bodegas_ids.length !== 1 ? 's' : ''}
@@ -591,7 +524,7 @@ export default function UsuariosPage() {
                   </p>
                 )}
 
-                <div className="border border-gray-200 rounded-xl p-2 max-h-56 overflow-y-auto space-y-1">
+                <div className={`border rounded-xl p-2 max-h-56 overflow-y-auto space-y-1 ${form.rol !== 'admin' && form.bodegas_ids.length === 0 ? 'border-red-200 bg-red-50/30' : 'border-gray-200'}`}>
                   {bodegas.length === 0 ? (
                     <div className="flex flex-col items-center py-6 text-center">
                       <BuildingStorefrontIcon className="w-8 h-8 text-gray-300 mb-2" />
@@ -604,8 +537,7 @@ export default function UsuariosPage() {
                       return (
                         <label
                           key={b.id}
-                          className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors min-h-[44px] ${checked ? 'bg-[#1A0087]/5' : 'hover:bg-gray-50 active:bg-gray-100'
-                            }`}
+                          className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors min-h-[44px] ${checked ? 'bg-[#1A0087]/5' : 'hover:bg-gray-50 active:bg-gray-100'}`}
                         >
                           <input
                             type="checkbox"
@@ -614,9 +546,7 @@ export default function UsuariosPage() {
                             className="w-5 h-5 text-[#1A0087] border-gray-300 rounded focus:ring-[#1A0087] focus:ring-offset-0"
                           />
                           <span className="text-sm text-[#232323] flex-1">{b.nombre}</span>
-                          {checked && (
-                            <CheckIcon className="w-4 h-4 text-[#1A0087]" />
-                          )}
+                          {checked && <CheckIcon className="w-4 h-4 text-[#1A0087]" />}
                         </label>
                       )
                     })
@@ -634,10 +564,9 @@ export default function UsuariosPage() {
                 )}
               </div>
 
-              {/* Mensajes */}
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2.5 rounded-xl text-sm">
-                  {error}
+                <div className="bg-red-50 border border-red-200 text-red-600 px-3 py-2.5 rounded-xl text-sm font-medium">
+                  ⚠️ {error}
                 </div>
               )}
               {success && (
@@ -647,7 +576,6 @@ export default function UsuariosPage() {
               )}
             </div>
 
-            {/* Footer */}
             <div className="shrink-0 border-t border-gray-100 p-4 flex gap-2 bg-gray-50">
               <button
                 onClick={() => setShowModal(false)}
@@ -658,7 +586,7 @@ export default function UsuariosPage() {
               </button>
               <button
                 onClick={handleGuardar}
-                disabled={guardando}
+                disabled={guardando || guardarBloqueado}
                 className="flex-1 min-h-[44px] px-4 py-2.5 bg-[#1A0087] text-white rounded-xl hover:bg-[#130066] active:scale-[0.98] disabled:opacity-50 font-medium transition-all"
               >
                 {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear usuario'}

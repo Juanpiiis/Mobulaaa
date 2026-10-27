@@ -45,13 +45,14 @@ interface Categoria {
   nombre: string
 }
 
-const LIMITE_DEFAULT = 150
-
+// Lógica estricta: Solo se congela si es manual o si tiene un límite > 0 y el stock es menor/igual
 function esProductoCongelado(info: CongeladoInfo | undefined): boolean {
   if (!info) return false
   if (info.congelado_manual) return true
-  const limite = info.limite_congelado ?? LIMITE_DEFAULT
-  if (limite === 0) return false
+
+  const limite = info.limite_congelado ?? 0
+  if (limite <= 0) return false
+
   return info.stock_disponible <= limite
 }
 
@@ -62,6 +63,102 @@ function normalizar(s: string | null | undefined): string {
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function ProductoCard({
+  p,
+  onEditar,
+  onToggleActivo,
+  congelado,
+  catMostrar,
+  stock,
+  formatPrecio
+}: any) {
+  return (
+    <div className={`bg-white border border-gray-200 rounded-2xl p-4 hover:border-[#1A0087]/30 hover:shadow-md transition-all ${!p.activo ? 'opacity-60' : ''}`}>
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="font-bold text-[#232323] text-sm leading-tight line-clamp-2">
+            {p.nombre}
+          </h3>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {p.marca && (
+              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-[#1A0087]/10 text-[#1A0087]">
+                {p.marca}
+              </span>
+            )}
+            {catMostrar && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-[#828282]">
+                {catMostrar}
+              </span>
+            )}
+            {congelado && (
+              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700 flex items-center gap-1">
+                <LockClosedIcon className="w-3 h-3" />
+                Congelado
+              </span>
+            )}
+            {!p.activo && (
+              <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                Inactivo
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-1 text-xs text-[#828282] mb-3">
+        {p.codigo && (
+          <p><span className="font-medium text-[#232323]">Código:</span> {p.codigo}</p>
+        )}
+        {p.referencia_excel ? (
+          <p className="truncate">
+            <span className="font-medium text-[#232323]">Ref:</span>{' '}
+            <span className="font-mono">{p.referencia_excel}</span>
+          </p>
+        ) : (
+          <p className="text-amber-600 font-medium">⚠️ Sin referencia de Excel</p>
+        )}
+        {stock !== undefined && (
+          <p><span className="font-medium text-[#232323]">Stock:</span> {stock}</p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5 mb-3 text-center">
+        <div className="bg-gray-50 rounded-lg py-1.5">
+          <p className="text-[9px] text-[#828282] uppercase">Mayor.</p>
+          <p className="text-xs font-bold text-[#232323]">{formatPrecio(p.precio_mayorista)}</p>
+        </div>
+        <div className="bg-gray-50 rounded-lg py-1.5">
+          <p className="text-[9px] text-[#828282] uppercase">TAT</p>
+          <p className="text-xs font-bold text-[#232323]">{formatPrecio(p.precio_tat)}</p>
+        </div>
+        <div className="bg-gray-50 rounded-lg py-1.5">
+          <p className="text-[9px] text-[#828282] uppercase">Unidad</p>
+          <p className="text-xs font-bold text-[#1A0087]">{formatPrecio(p.precio)}</p>
+        </div>
+      </div>
+
+      <div className="flex gap-1.5 pt-3 border-t border-gray-100">
+        <button
+          onClick={() => onEditar(p)}
+          className="flex-1 min-h-[36px] text-xs font-semibold text-[#1A0087] bg-[#1A0087]/5 hover:bg-[#1A0087]/10 rounded-lg transition-colors flex items-center justify-center gap-1"
+        >
+          <PencilSquareIcon className="w-3.5 h-3.5" />
+          Editar
+        </button>
+        <button
+          onClick={() => onToggleActivo(p)}
+          className={`min-h-[36px] px-4 text-xs font-medium rounded-lg transition-colors ${p.activo
+              ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+              : 'text-green-600 bg-green-50 hover:bg-green-100'
+            }`}
+        >
+          {p.activo ? 'Desactivar' : 'Activar'}
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export default function ProductosPage() {
@@ -114,9 +211,7 @@ export default function ProductosPage() {
       .eq('activo', true)
       .order('nombre')
 
-    if (errB) {
-      console.error('Error cargando bodegas:', errB)
-    }
+    if (errB) console.error('Error cargando bodegas:', errB)
 
     const { data: c, error: errC } = await supabase
       .from('categorias')
@@ -171,9 +266,6 @@ export default function ProductosPage() {
     }
   }
 
-  // ─────────────────────────────────────
-  // CREAR PRODUCTO
-  // ─────────────────────────────────────
   const handleGuardar = async () => {
     setGuardando(true)
     const nombreCompleto = form.color
@@ -223,54 +315,55 @@ export default function ProductosPage() {
 
   const cerrarModal = () => {
     setShowModal(false)
-    setForm({
-      nombre: '',
-      color: '',
-      categoria: '',
-      codigo: '',
-      bodega_id: '',
-      cantidad: '0',
-    })
+    setForm({ nombre: '', color: '', categoria: '', codigo: '', bodega_id: '', cantidad: '0' })
   }
 
   const handleEditarCompleto = (p: Producto) => {
     router.push(`/admin/productos/${p.id}/editar`)
   }
 
-  // ✅ Única acción de estado: Activar / Desactivar
   const handleToggleActivo = async (p: Producto) => {
-    const { error } = await supabase
+    const { error, data } = await supabase
       .from('productos')
       .update({ activo: !p.activo })
       .eq('id', p.id)
+      .select()
 
     if (error) {
-      console.error('Error cambiando activo:', error)
-      setErrorCarga('No se pudo cambiar el estado: ' + error.message)
+      console.error('Error de Supabase al actualizar:', error)
+      alert('Error al cambiar estado en la BD: ' + error.message)
       return
     }
+
+    if (!data || data.length === 0) {
+      alert('La base de datos no dejó actualizar el producto. Revisa los permisos (RLS) en Supabase.')
+      return
+    }
+
     cargarDatos()
   }
 
+  // ✅ LÓGICA DE FILTRADO: Si "Mostrar inactivos" está activado, SOLO mostramos inactivos.
   const filtrados = useMemo(() => {
     return productos.filter((p) => {
-      // 1. Filtro de inactivos
-      if (!mostrarInactivos && !p.activo) return false
+      // 1. Si el checkbox está marcado, SOLO queremos inactivos.
+      if (mostrarInactivos) {
+        if (p.activo) return false // Ocultar los activos
+      } else {
+        // 2. Si el checkbox NO está marcado, ocultamos los inactivos.
+        if (!p.activo) return false
+      }
 
-      // 2. Filtro de congelados
       const congelado = esProductoCongelado(getCongeladoInfo(p))
       if (mostrarSoloCongelados && !congelado) return false
 
-      // 3. Filtro de categoría
       if (categoriaFiltro) {
         const ce = normalizar(p.categoria_excel)
         const c = normalizar(p.categoria)
         const filtro = normalizar(categoriaFiltro)
-        const match = ce === filtro || c === filtro
-        if (!match) return false
+        if (ce !== filtro && c !== filtro) return false
       }
 
-      // 4. Búsqueda
       if (busqueda.trim()) {
         const q = normalizar(busqueda).toLowerCase()
         const hayMatch =
@@ -287,6 +380,12 @@ export default function ProductosPage() {
     })
   }, [productos, busqueda, categoriaFiltro, mostrarInactivos, mostrarSoloCongelados, stockPorProducto, tiendaActual])
 
+  // Separación de arrays para la vista
+  const inactivos = filtrados.filter(p => !p.activo)
+  const activosYCongelados = filtrados.filter(p => p.activo)
+  const congelados = activosYCongelados.filter(p => esProductoCongelado(getCongeladoInfo(p)))
+  const activos = activosYCongelados.filter(p => !esProductoCongelado(getCongeladoInfo(p)))
+
   const formatPrecio = (n: number | null) => {
     if (n === null || n === undefined) return '—'
     return '$' + n.toLocaleString('es-CO')
@@ -300,16 +399,11 @@ export default function ProductosPage() {
 
   return (
     <div className="min-h-screen bg-[#F7F7FB] w-full">
-      {/* HEADER */}
       <header className="sticky top-[calc(var(--main-padding)*-1)] -mx-[var(--main-padding)] -mt-[var(--main-padding)] z-20 bg-white border-b border-gray-100">
         <div className="w-full px-4 sm:px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-[#232323]">
-              Productos
-            </h1>
-            <p className="text-sm text-[#828282] mt-0.5">
-              {filtrados.length} de {productos.length} productos
-            </p>
+            <h1 className="text-xl sm:text-2xl font-bold text-[#232323]">Productos</h1>
+            <p className="text-sm text-[#828282] mt-0.5">{filtrados.length} de {productos.length} productos</p>
             {tiendaActual && (
               <p className="text-xs text-[#828282] mt-0.5">
                 Bodega: <span className="font-medium text-[#232323]">{tiendaActual.nombre}</span>
@@ -326,18 +420,14 @@ export default function ProductosPage() {
         </div>
       </header>
 
-      <main className="w-full px-4 sm:px-6 py-6 space-y-4">
-
+      <main className="w-full px-4 sm:px-6 py-6 space-y-6">
         {errorCarga && (
           <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm flex items-start justify-between gap-3">
             <span>❌ {errorCarga}</span>
-            <button onClick={() => setErrorCarga('')} className="text-xs font-medium">
-              Cerrar
-            </button>
+            <button onClick={() => setErrorCarga('')} className="text-xs font-medium">Cerrar</button>
           </div>
         )}
 
-        {/* FILTROS */}
         <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="relative">
@@ -358,9 +448,7 @@ export default function ProductosPage() {
             >
               <option value="">Todas las categorías</option>
               {categorias.map((c) => (
-                <option key={c.id} value={c.nombre}>
-                  {c.nombre}
-                </option>
+                <option key={c.id} value={c.nombre}>{c.nombre}</option>
               ))}
             </select>
           </div>
@@ -373,7 +461,7 @@ export default function ProductosPage() {
                 onChange={(e) => setMostrarInactivos(e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-[#1A0087] focus:ring-[#1A0087]"
               />
-              Mostrar inactivos
+              Mostrar inactivos (solo)
             </label>
             <label className="flex items-center gap-2 cursor-pointer text-sm text-[#828282]">
               <input
@@ -387,224 +475,94 @@ export default function ProductosPage() {
           </div>
         </div>
 
-        {/* LISTA DE PRODUCTOS */}
-        {loading && (
+        {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-8 h-8 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
           </div>
-        )}
-
-        {!loading && filtrados.length === 0 && (
+        ) : filtrados.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center">
             <p className="text-[#828282] text-sm">
-              No se encontraron productos con estos filtros
+              {mostrarInactivos
+                ? 'No hay productos inactivos'
+                : 'No se encontraron productos con estos filtros'}
             </p>
           </div>
-        )}
-
-        {!loading && filtrados.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filtrados.map((p) => {
-              const infoCong = getCongeladoInfo(p)
-              const congelado = esProductoCongelado(infoCong)
-              const catMostrar = getCategoriaMostrar(p)
-              const stock = infoCong?.stock_disponible
-              return (
-                <div
-                  key={p.id}
-                  className={`bg-white border border-gray-200 rounded-2xl p-4 hover:border-[#1A0087]/30 hover:shadow-md transition-all ${!p.activo ? 'opacity-60' : ''
-                    }`}
-                >
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-bold text-[#232323] text-sm leading-tight line-clamp-2">
-                        {p.nombre}
-                      </h3>
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        {p.marca && (
-                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-[#1A0087]/10 text-[#1A0087]">
-                            {p.marca}
-                          </span>
-                        )}
-                        {catMostrar && (
-                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-gray-100 text-[#828282]">
-                            {catMostrar}
-                          </span>
-                        )}
-                        {congelado && (
-                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700 flex items-center gap-1">
-                            <LockClosedIcon className="w-3 h-3" />
-                            Congelado
-                          </span>
-                        )}
-                        {!p.activo && (
-                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
-                            Inactivo
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1 text-xs text-[#828282] mb-3">
-                    {p.codigo && (
-                      <p>
-                        <span className="font-medium text-[#232323]">Código:</span>{' '}
-                        {p.codigo}
-                      </p>
-                    )}
-                    {p.referencia_excel ? (
-                      <p className="truncate">
-                        <span className="font-medium text-[#232323]">Ref:</span>{' '}
-                        <span className="font-mono">{p.referencia_excel}</span>
-                      </p>
-                    ) : (
-                      <p className="text-amber-600 font-medium">
-                        ⚠️ Sin referencia de Excel
-                      </p>
-                    )}
-                    {stock !== undefined && (
-                      <p>
-                        <span className="font-medium text-[#232323]">Stock:</span>{' '}
-                        {stock}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-1.5 mb-3 text-center">
-                    <div className="bg-gray-50 rounded-lg py-1.5">
-                      <p className="text-[9px] text-[#828282] uppercase">Mayor.</p>
-                      <p className="text-xs font-bold text-[#232323]">
-                        {formatPrecio(p.precio_mayorista)}
-                      </p>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg py-1.5">
-                      <p className="text-[9px] text-[#828282] uppercase">TAT</p>
-                      <p className="text-xs font-bold text-[#232323]">
-                        {formatPrecio(p.precio_tat)}
-                      </p>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg py-1.5">
-                      <p className="text-[9px] text-[#828282] uppercase">Unidad</p>
-                      <p className="text-xs font-bold text-[#1A0087]">
-                        {formatPrecio(p.precio)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-1.5 pt-3 border-t border-gray-100">
-                    <button
-                      onClick={() => handleEditarCompleto(p)}
-                      className="flex-1 min-h-[36px] text-xs font-semibold text-[#1A0087] bg-[#1A0087]/5 hover:bg-[#1A0087]/10 rounded-lg transition-colors flex items-center justify-center gap-1"
-                      title="Editar completo"
-                    >
-                      <PencilSquareIcon className="w-3.5 h-3.5" />
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => handleToggleActivo(p)}
-                      className={`min-h-[36px] px-4 text-xs font-medium rounded-lg transition-colors ${p.activo
-                          ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
-                          : 'text-green-600 bg-green-50 hover:bg-green-100'
-                        }`}
-                      title={p.activo ? 'Desactivar' : 'Activar'}
-                    >
-                      {p.activo ? 'Off' : 'On'}
-                    </button>
-                  </div>
+        ) : (
+          <div className="space-y-8">
+            {/* 1. ACTIVOS */}
+            {activos.length > 0 && (
+              <section>
+                <h2 className="text-lg font-bold text-[#232323] mb-3 flex items-center gap-2">
+                  ✅ Productos Activos
+                  <span className="text-sm font-normal text-[#828282]">({activos.length})</span>
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {activos.map((p) => (
+                    <ProductoCard key={p.id} p={p} congelado={false} catMostrar={getCategoriaMostrar(p)} stock={getCongeladoInfo(p)?.stock_disponible} onEditar={handleEditarCompleto} onToggleActivo={handleToggleActivo} formatPrecio={formatPrecio} />
+                  ))}
                 </div>
-              )
-            })}
+              </section>
+            )}
+
+            {/* 2. CONGELADOS */}
+            {congelados.length > 0 && (
+              <section>
+                <h2 className="text-lg font-bold text-red-700 mb-3 flex items-center gap-2">
+                  🔒 Productos Congelados
+                  <span className="text-sm font-normal text-[#828282]">({congelados.length})</span>
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {congelados.map((p) => (
+                    <ProductoCard key={p.id} p={p} congelado={true} catMostrar={getCategoriaMostrar(p)} stock={getCongeladoInfo(p)?.stock_disponible} onEditar={handleEditarCompleto} onToggleActivo={handleToggleActivo} formatPrecio={formatPrecio} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* 3. INACTIVOS */}
+            {inactivos.length > 0 && (
+              <section>
+                <h2 className="text-lg font-bold text-gray-500 mb-3 flex items-center gap-2">
+                  🚫 Productos Inactivos
+                  <span className="text-sm font-normal text-[#828282]">({inactivos.length})</span>
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {inactivos.map((p) => (
+                    <ProductoCard key={p.id} p={p} congelado={esProductoCongelado(getCongeladoInfo(p))} catMostrar={getCategoriaMostrar(p)} stock={getCongeladoInfo(p)?.stock_disponible} onEditar={handleEditarCompleto} onToggleActivo={handleToggleActivo} formatPrecio={formatPrecio} />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
       </main>
 
-      {/* MODAL: Crear Producto */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="p-5 border-b border-gray-100">
-              <h2 className="text-lg font-bold text-[#232323]">
-                Nuevo Producto
-              </h2>
-              <p className="text-xs text-[#828282] mt-0.5">
-                Para precios, referencia y congelado, usá "Editar" después de crearlo
-              </p>
+              <h2 className="text-lg font-bold text-[#232323]">Nuevo Producto</h2>
+              <p className="text-xs text-[#828282] mt-0.5">Para precios, referencia y congelado, usá "Editar" después de crearlo</p>
             </div>
 
             <div className="p-5 space-y-3">
-              <input
-                className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
-                placeholder="Código (ej: S25-NEG)"
-                value={form.codigo}
-                onChange={(e) =>
-                  setForm({ ...form, codigo: e.target.value.toUpperCase() })
-                }
-              />
-              <input
-                className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
-                placeholder="Nombre (ej: S25 PRO)"
-                value={form.nombre}
-                onChange={(e) => setForm({ ...form, nombre: e.target.value })}
-              />
-              <input
-                className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
-                placeholder="Color (ej: NEGRO)"
-                value={form.color}
-                onChange={(e) => setForm({ ...form, color: e.target.value })}
-              />
-              <select
-                className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 bg-white"
-                value={form.categoria}
-                onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-              >
+              <input className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10" placeholder="Código (ej: S25-NEG)" value={form.codigo} onChange={(e) => setForm({ ...form, codigo: e.target.value.toUpperCase() })} />
+              <input className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10" placeholder="Nombre (ej: S25 PRO)" value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+              <input className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10" placeholder="Color (ej: NEGRO)" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} />
+              <select className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 bg-white" value={form.categoria} onChange={(e) => setForm({ ...form, categoria: e.target.value })}>
                 <option value="">Seleccionar categoría</option>
-                {categorias.map((c) => (
-                  <option key={c.id} value={c.nombre}>
-                    {c.nombre}
-                  </option>
-                ))}
+                {categorias.map((c) => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
               </select>
-
-              <select
-                className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 bg-white"
-                value={form.bodega_id}
-                onChange={(e) =>
-                  setForm({ ...form, bodega_id: e.target.value })
-                }
-              >
+              <select className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10 bg-white" value={form.bodega_id} onChange={(e) => setForm({ ...form, bodega_id: e.target.value })}>
                 <option value="">Seleccionar tienda/bodega</option>
-                {bodegas.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.nombre}
-                  </option>
-                ))}
+                {bodegas.map((b) => <option key={b.id} value={b.id}>{b.nombre}</option>)}
               </select>
-              <input
-                className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
-                type="number"
-                placeholder="Cantidad inicial"
-                value={form.cantidad}
-                onChange={(e) =>
-                  setForm({ ...form, cantidad: e.target.value })
-                }
-              />
+              <input className="w-full border border-gray-200 px-3 py-2.5 rounded-xl text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10" type="number" placeholder="Cantidad inicial" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value })} />
             </div>
 
             <div className="p-5 border-t border-gray-100 flex gap-2 justify-end">
-              <button
-                onClick={cerrarModal}
-                className="min-h-[44px] px-5 py-2.5 text-sm font-medium text-[#232323] bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleGuardar}
-                disabled={guardando}
-                className="min-h-[44px] px-5 py-2.5 text-sm font-semibold text-white bg-[#1A0087] hover:bg-[#130066] rounded-xl transition-all disabled:opacity-50"
-              >
-                {guardando ? 'Creando...' : 'Crear Producto'}
-              </button>
+              <button onClick={cerrarModal} className="min-h-[44px] px-5 py-2.5 text-sm font-medium text-[#232323] bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors">Cancelar</button>
+              <button onClick={handleGuardar} disabled={guardando} className="min-h-[44px] px-5 py-2.5 text-sm font-semibold text-white bg-[#1A0087] hover:bg-[#130066] rounded-xl transition-all disabled:opacity-50">{guardando ? 'Creando...' : 'Crear Producto'}</button>
             </div>
           </div>
         </div>

@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useTienda } from '@/lib/context/TiendaContext'
 import {
   PlusIcon, PencilIcon, TrashIcon, XMarkIcon, BuildingStorefrontIcon,
-  CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon
+  CheckCircleIcon, XCircleIcon, ExclamationTriangleIcon, LockClosedIcon
 } from '@heroicons/react/24/outline'
 
 interface Bodega {
@@ -40,6 +40,10 @@ export default function BodegasPage() {
   const [direccionError, setDireccionError] = useState('')
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error', message: string } | null>(null)
+
+  // 🔥 Estados para la confirmación de eliminación
+  const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [errorPassword, setErrorPassword] = useState('')
 
   const supabase = createClient()
 
@@ -129,7 +133,7 @@ export default function BodegasPage() {
 
       cerrarModal()
       await cargarBodegas()
-      await recargarBodegas() // ✅ Actualiza el contexto global
+      await recargarBodegas()
     } catch (e: any) {
       showToast('error', e?.message || 'No se pudo guardar la bodega')
     } finally {
@@ -137,24 +141,53 @@ export default function BodegasPage() {
     }
   }
 
+  // 🔥 NUEVA LÓGICA: Eliminar pidiendo contraseña
   const confirmarEliminar = async () => {
     if (!bodegaEliminar) return
+
+    if (!passwordConfirm.trim()) {
+      setErrorPassword('Debes ingresar tu contraseña para continuar')
+      return
+    }
+
     setSaving(true)
+    setErrorPassword('')
+
     try {
+      // 1. Obtener datos del usuario actual
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user || !user.email) throw new Error('Sesión no válida. Vuelve a iniciar sesión.')
+
+      // 2. Re-autenticar (verificar contraseña)
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: passwordConfirm,
+      })
+
+      if (authError) {
+        throw new Error('Contraseña incorrecta. La bodega no fue eliminada.')
+      }
+
+      // 3. Si la contraseña es correcta, inactivar la bodega
       const { error } = await supabase
         .from('bodegas')
         .update({ activo: false })
         .eq('id', bodegaEliminar.id)
+
       if (error) throw error
 
-      showToast('success', 'Bodega eliminada')
+      showToast('success', 'Bodega eliminada correctamente')
       await cargarBodegas()
-      await recargarBodegas() // ✅ Actualiza el contexto global
-    } catch {
-      showToast('error', 'No se pudo eliminar la bodega')
+      await recargarBodegas()
+
+      // Limpiar estados
+      setBodegaEliminar(null)
+      setPasswordConfirm('')
+
+    } catch (e: any) {
+      setErrorPassword(e.message)
     } finally {
       setSaving(false)
-      setBodegaEliminar(null)
     }
   }
 
@@ -185,7 +218,6 @@ export default function BodegasPage() {
         </button>
       </div>
 
-      {/* Loading */}
       {loading ? (
         <div className="flex justify-center py-20">
           <div className="w-10 h-10 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin"></div>
@@ -236,7 +268,11 @@ export default function BodegasPage() {
                             <PencilIcon className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => setBodegaEliminar(b)}
+                            onClick={() => {
+                              setBodegaEliminar(b)
+                              setPasswordConfirm('')
+                              setErrorPassword('')
+                            }}
                             className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-600 transition-colors"
                             title="Eliminar"
                           >
@@ -352,7 +388,7 @@ export default function BodegasPage() {
         </div>
       )}
 
-      {/* Modal Eliminar */}
+      {/* Modal Eliminar con Contraseña */}
       {bodegaEliminar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
@@ -363,20 +399,44 @@ export default function BodegasPage() {
             <p className="text-sm text-[#828282] mb-6">
               ¿Estás seguro de eliminar <strong>"{bodegaEliminar.nombre}"</strong>?
             </p>
-            <div className="flex justify-center gap-3">
+
+            <div className="mb-4 text-left">
+              <label className="block text-xs font-semibold text-[#232323] mb-1.5 flex items-center gap-1">
+                <LockClosedIcon className="w-4 h-4 text-gray-500" />
+                Confirma con tu contraseña de administrador
+              </label>
+              <input
+                type="password"
+                value={passwordConfirm}
+                onChange={(e) => { setPasswordConfirm(e.target.value); setErrorPassword('') }}
+                placeholder="••••••••"
+                className={`w-full border px-3 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1A0087]/20 ${errorPassword ? 'border-red-300 focus:border-red-500' : 'border-gray-200 focus:border-[#1A0087]'
+                  }`}
+                autoFocus
+              />
+              {errorPassword && (
+                <p className="text-xs text-red-500 mt-1.5 font-medium">{errorPassword}</p>
+              )}
+            </div>
+
+            <div className="flex justify-center gap-3 mt-6">
               <button
-                onClick={() => setBodegaEliminar(null)}
-                className="min-h-[44px] px-4 py-2.5 rounded-xl text-gray-600 font-medium border border-gray-300 hover:bg-gray-50 active:scale-[0.98] transition-all disabled:opacity-50"
+                onClick={() => { setBodegaEliminar(null); setPasswordConfirm(''); setErrorPassword('') }}
+                className="flex-1 min-h-[44px] px-4 py-2.5 rounded-xl text-gray-600 font-medium border border-gray-300 hover:bg-gray-50 active:scale-[0.98] transition-all disabled:opacity-50"
                 disabled={saving}
               >
                 Cancelar
               </button>
               <button
                 onClick={confirmarEliminar}
-                className="min-h-[44px] px-4 py-2.5 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 active:scale-[0.98] transition-all disabled:opacity-50"
-                disabled={saving}
+                className="flex-1 min-h-[44px] px-4 py-2.5 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                disabled={saving || !passwordConfirm.trim()}
               >
-                {saving ? 'Eliminando...' : 'Eliminar'}
+                {saving ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Validando...</>
+                ) : (
+                  'Eliminar'
+                )}
               </button>
             </div>
           </div>

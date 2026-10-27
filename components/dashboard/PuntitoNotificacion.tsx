@@ -28,62 +28,71 @@ export function PuntitoNotificacion({ rol }: { rol: string }) {
     useEffect(() => {
         if (!tiendaActual && rol !== 'cartera') return
 
-        const contarPedidos = async (): Promise<number> => {
-            let query = supabase.from('pedidos').select('*', { count: 'exact', head: true })
+        // 🔥 Generamos un nombre único de canal para evitar el error de React Strict Mode
+        const channelName = `badge-${rol}-${tiendaActual?.id || 'global'}-${Math.random().toString(36).substring(7)}`
 
-            // 🔥 LÓGICA CORREGIDA SEGÚN EL FLUJO
-            if (rol === 'cartera') {
-                query = query.eq('estado', 'pendiente')
-            } else if (rol === 'admin') {
-                // Admin ve todos los pendientes y aprobados de su bodega
-                query = query.in('estado', ['pendiente', 'aprobado_cartera']).eq('bodega_id', tiendaActual?.id)
-            } else if (rol === 'bodeguero') {
-                // Bodega SOLO ve los aprobados por cartera
-                query = query.eq('estado', 'aprobado_cartera').eq('bodega_id', tiendaActual?.id)
-            } else if (rol === 'vendedor') {
-                // Vendedor ve cuando cartera le aprueba su pedido
-                const { data: { user } } = await supabase.auth.getUser()
-                query = query.eq('estado', 'aprobado_cartera').eq('bodega_id', tiendaActual?.id).eq('vendedor_id', user?.id)
+        let channel: any = null
+
+        const iniciarRealtime = async () => {
+            // 1. Funcion para contar
+            const contarPedidos = async (): Promise<number> => {
+                let query = supabase.from('pedidos').select('*', { count: 'exact', head: true })
+
+                if (rol === 'cartera') {
+                    query = query.eq('estado', 'pendiente')
+                } else if (rol === 'admin') {
+                    query = query.in('estado', ['pendiente', 'aprobado_cartera']).eq('bodega_id', tiendaActual?.id)
+                } else if (rol === 'bodeguero') {
+                    query = query.eq('estado', 'aprobado_cartera').eq('bodega_id', tiendaActual?.id)
+                } else if (rol === 'vendedor') {
+                    const { data: { user } } = await supabase.auth.getUser()
+                    query = query.eq('estado', 'aprobado_cartera').eq('bodega_id', tiendaActual?.id).eq('vendedor_id', user?.id)
+                }
+
+                const { count, error } = await query
+                if (error) console.error("Error contando:", error)
+                return count || 0
             }
 
-            const { count, error } = await query
-            if (error) console.error("Error contando:", error)
-            return count || 0
+            // 2. Funcion para revisar estado
+            const revisarEstado = async () => {
+                const totalEnBD = await contarPedidos()
+                cantidadActualRef.current = totalEnBD
+
+                if (estasEnLaPaginaRef.current) {
+                    setHayNuevo(false)
+                    localStorage.setItem(storageKey, totalEnBD.toString())
+                    return
+                }
+
+                const totalVisto = parseInt(localStorage.getItem(storageKey) || '0', 10)
+                setHayNuevo(totalEnBD > totalVisto)
+            }
+
+            // Revisión inicial
+            revisarEstado()
+
+            // 3. Configurar canal con nombre ÚNICO
+            const filtro = rol === 'cartera' ? undefined : `bodega_id=eq.${tiendaActual?.id}`
+
+            channel = supabase
+                .channel(channelName)
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'pedidos', filter: filtro },
+                    () => setTimeout(revisarEstado, 500)
+                )
+                .subscribe()
         }
 
-        const revisarEstado = async () => {
-            const totalEnBD = await contarPedidos()
-            cantidadActualRef.current = totalEnBD
+        iniciarRealtime()
 
-            if (estasEnLaPaginaRef.current) {
-                setHayNuevo(false)
-                localStorage.setItem(storageKey, totalEnBD.toString())
-                return
-            }
-
-            const totalVisto = parseInt(localStorage.getItem(storageKey) || '0', 10)
-
-            if (totalEnBD > totalVisto) {
-                setHayNuevo(true)
-            } else {
-                setHayNuevo(false)
+        // Limpieza del canal
+        return () => {
+            if (channel) {
+                supabase.removeChannel(channel)
             }
         }
-
-        revisarEstado()
-
-        const filtro = rol === 'cartera' ? undefined : `bodega_id=eq.${tiendaActual?.id}`
-
-        const channel = supabase
-            .channel(`badge-${rol}`)
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'pedidos', filter: filtro },
-                () => setTimeout(revisarEstado, 500)
-            )
-            .subscribe()
-
-        return () => { supabase.removeChannel(channel) }
     }, [rol, tiendaActual?.id, supabase, storageKey])
 
     useEffect(() => {

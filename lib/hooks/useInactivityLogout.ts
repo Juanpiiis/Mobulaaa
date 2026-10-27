@@ -7,6 +7,9 @@ import { useRouter } from 'next/navigation'
 const TIEMPO_INACTIVIDAD_MS = 30 * 60 * 1000  // 30 min
 const TIEMPO_AVISO_MS = TIEMPO_INACTIVIDAD_MS - 5 * 60 * 1000
 
+// const TIEMPO_INACTIVIDAD_MS = 10 * 1000; // 10 segundos
+// const TIEMPO_AVISO_MS = TIEMPO_INACTIVIDAD_MS - 5 * 1000; // 5 segundoss
+
 const EVENTOS_ACTIVIDAD = [
     'mousedown',
     'mousemove',
