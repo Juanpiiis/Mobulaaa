@@ -1,5 +1,4 @@
 'use client'
-
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 
 type Tema = 'light' | 'dark'
@@ -7,55 +6,48 @@ type Tema = 'light' | 'dark'
 interface ThemeContextType {
     tema: Tema
     toggleTema: () => void
-    setTema: (t: Tema) => void
 }
 
 const ThemeContext = createContext<ThemeContextType>({
     tema: 'light',
     toggleTema: () => { },
-    setTema: () => { },
 })
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-    const [tema, setTemaState] = useState<Tema>('light')
-    const [montado, setMontado] = useState(false)
+    // 🔥 Forzamos que el tema inicial SIEMPRE sea claro
+    const [tema, setTema] = useState<Tema>('light')
 
-    // Al montar: lee de localStorage o del sistema
     useEffect(() => {
-        const stored = localStorage.getItem('mobulaa-tema') as Tema | null
-        if (stored === 'light' || stored === 'dark') {
-            setTemaState(stored)
+        // Al cargar, revisamos si el usuario había guardado una preferencia
+        const guardado = localStorage.getItem('mobulaa-tema') as Tema | null
+
+        // Si guardó 'dark' explícitamente, respetamos su elección.
+        // Si no hay nada, se queda en 'light' por defecto.
+        if (guardado === 'dark') {
+            setTema('dark')
         } else {
-            const prefiereOscuro = window.matchMedia('(prefers-color-scheme: dark)').matches
-            setTemaState(prefiereOscuro ? 'dark' : 'light')
+            setTema('light')
         }
-        setMontado(true)
     }, [])
 
-    // Aplica la clase al <html> cada vez que cambia el tema
     useEffect(() => {
-        if (!montado) return
-        const root = document.documentElement
+        const root = window.document.documentElement
+        // Aplicar clases al HTML
         if (tema === 'dark') {
             root.classList.add('dark')
         } else {
             root.classList.remove('dark')
         }
-    }, [tema, montado])
-
-    const setTema = (t: Tema) => {
-        setTemaState(t)
-        try {
-            localStorage.setItem('mobulaa-tema', t)
-        } catch { }
-    }
+        // Guardar en memoria
+        localStorage.setItem('mobulaa-tema', tema)
+    }, [tema])
 
     const toggleTema = () => {
-        setTema(tema === 'dark' ? 'light' : 'dark')
+        setTema((prev) => (prev === 'light' ? 'dark' : 'light'))
     }
 
     return (
-        <ThemeContext.Provider value={{ tema, toggleTema, setTema }}>
+        <ThemeContext.Provider value={{ tema, toggleTema }}>
             {children}
         </ThemeContext.Provider>
     )
