@@ -1,4 +1,5 @@
 'use client'
+
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -8,7 +9,6 @@ import DashboardContent from '@/components/dashboard/DashboardContent'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [rol, setRol] = useState('')
-  const [userId, setUserId] = useState('')
   const [loading, setLoading] = useState(true)
   const [bodegasAsignadas, setBodegasAsignadas] = useState<string[] | null>(null)
   const router = useRouter()
@@ -26,7 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         const { data: userData, error } = await supabase
           .from('usuarios')
-          .select('rol, id, activo') // ✅ Traemos activo
+          .select('rol, id, activo')
           .eq('id', session.user.id)
           .single()
 
@@ -35,7 +35,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           return
         }
 
-        // ✅ NUEVO: Si el usuario está inactivo, cerramos sesión y bloqueamos
         if (!userData.activo) {
           await supabase.auth.signOut()
           router.push('/login?error=inactivo')
@@ -43,16 +42,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
 
         setRol(userData.rol || '')
-        setUserId(session.user.id)
 
-        // Si es admin, no necesitamos consultar usuario_bodegas
         if (userData.rol === 'admin') {
           setBodegasAsignadas([])
           setLoading(false)
           return
         }
 
-        // Para no-admins: consultamos sus bodegas asignadas
         const { data: bodegasData, error: bodegasError } = await supabase
           .from('usuario_bodegas')
           .select('bodega_id')
@@ -72,7 +68,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
 
     checkAuth()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (
@@ -111,11 +107,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
+
   return (
-    <NotificacionesProvider>  {/* 🔥 SIN PROPS */}
-      <DashboardContent rol={rol}>
-        {children}
-      </DashboardContent>
-    </NotificacionesProvider>
+    <ProvidersWithKey>
+      <NotificacionesProvider>
+        <DashboardContent rol={rol}>
+          {children}
+        </DashboardContent>
+      </NotificacionesProvider>
+    </ProvidersWithKey>
   )
 }
