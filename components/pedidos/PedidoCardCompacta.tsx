@@ -22,6 +22,7 @@ export interface PedidoCompacto {
             nombre: string
             codigo?: string | null
             precio?: number | null
+            precio_mayorista?: number | null // 🔥 AGREGADO
         } | null
     }[]
 }
@@ -116,8 +117,9 @@ export function PedidoCardCompacta({
 
     const puedeMarcarImportante = esAdmin && !esRechazado && !esDevuelto && pedido.estado !== 'despachado' && pedido.estado !== 'entregado'
 
+    // 🔥 CORRECCIÓN: Comparamos contra el precio mayorista
     const hayPrecioAjustado = pedido.detalle_pedido.some(d => {
-        const precioBase = d.productos?.precio ?? 0
+        const precioBase = d.productos?.precio_mayorista ?? d.productos?.precio ?? 0
         return d.precio_unitario != null && d.precio_unitario > precioBase
     })
 
@@ -146,7 +148,7 @@ export function PedidoCardCompacta({
                                 </span>
                             )}
                             {hayPrecioAjustado && (
-                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800 ring-1 ring-inset ring-amber-300">
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800 ring-1 ring-inset ring-red-300">
                                     * Precio ajustado
                                 </span>
                             )}
@@ -232,12 +234,13 @@ export function PedidoCardCompacta({
                         <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100">
                             {itemsMostrar.map((d, i) => {
                                 const cantidad = d.cantidad_aprobada ?? d.cantidad_solicitada
-                                const precioBase = d.productos?.precio ?? 0
+                                // 🔥 CORRECCIÓN: Usamos el precio mayorista como base
+                                const precioBase = d.productos?.precio_mayorista ?? d.productos?.precio ?? 0
                                 const precio = d.precio_unitario ?? precioBase
                                 const subtotalLinea = precio * cantidad
                                 const subido = d.precio_unitario != null && d.precio_unitario > precioBase
                                 return (
-                                    <li key={i} className={`flex min-w-0 items-center gap-3 px-3 py-2.5 ${subido ? 'bg-amber-50/60' : ''}`}>
+                                    <li key={i} className={`flex min-w-0 items-center gap-3 px-3 py-2.5 ${subido ? 'bg-red-50/60' : ''}`}>
                                         <div className="min-w-0 flex-1">
                                             <p className="truncate text-sm text-[#232323]">{d.productos?.nombre || 'Producto'}</p>
                                             {precio > 0 && (
@@ -246,8 +249,8 @@ export function PedidoCardCompacta({
                                                         <>
                                                             <span className="text-[#828282]">{formatCOP(precioBase)}</span>
                                                             <span className="text-[#828282]">→</span>
-                                                            <span className="text-amber-700 font-semibold">{formatCOP(precio)}</span>
-                                                            <span className="text-amber-600 font-bold">*</span>
+                                                            <span className="text-red-700 font-semibold">{formatCOP(precio)}</span>
+                                                            <span className="text-red-600 font-bold">*</span>
                                                         </>
                                                     ) : (
                                                         <span className="text-[#828282]">{formatCOP(precio)} c/u</span>
@@ -271,8 +274,8 @@ export function PedidoCardCompacta({
                     )}
 
                     {hayPrecioAjustado && (
-                        <p className="text-[11px] text-amber-700 italic mt-2">
-                            * Precio ajustado sobre el precio base.
+                        <p className="text-[11px] text-red-700 italic mt-2">
+                            * Precio ajustado por encima del precio base.
                         </p>
                     )}
                 </section>

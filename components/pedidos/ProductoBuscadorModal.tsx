@@ -55,13 +55,11 @@ export function ProductoBuscadorModal({
 
     if (!abierto) return null
 
-    // 1. Filtrar por categoría + excluir los que ya están en el pedido
     let filtrados = resultados.filter(p => !productosExcluidos.includes(p.id))
     if (categoriaActiva) {
         filtrados = filtrados.filter(p => p.categoria === categoriaActiva)
     }
 
-    // 2. Ordenar: disponibles primero, luego congelados
     const ordenados = [...filtrados].sort((a, b) => {
         const aCong = esProductoCongelado(a) ? 1 : 0
         const bCong = esProductoCongelado(b) ? 1 : 0
@@ -73,8 +71,6 @@ export function ProductoBuscadorModal({
     return (
         <div className="fixed inset-0 z-[90] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4">
             <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
-
-                {/* HEADER */}
                 <div className="shrink-0 flex items-center justify-between p-5 border-b border-gray-100">
                     <div className="flex items-center gap-2">
                         <div className="w-9 h-9 rounded-xl bg-[#1A0087]/10 flex items-center justify-center">
@@ -87,16 +83,11 @@ export function ProductoBuscadorModal({
                             </p>
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 active:bg-gray-200 transition-colors"
-                        aria-label="Cerrar"
-                    >
+                    <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 active:bg-gray-200 transition-colors">
                         <XMarkIcon className="w-5 h-5" />
                     </button>
                 </div>
 
-                {/* BUSCADOR */}
                 <div className="shrink-0 p-4 border-b border-gray-100">
                     <div className="relative">
                         <MagnifyingGlassIcon className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -116,7 +107,6 @@ export function ProductoBuscadorModal({
                     </div>
                 </div>
 
-                {/* CHIPS DE CATEGORÍAS */}
                 {categorias.length > 0 && (
                     <div className="shrink-0 border-b border-gray-100 bg-white">
                         <div className="overflow-x-auto scrollbar-hide">
@@ -124,10 +114,7 @@ export function ProductoBuscadorModal({
                                 <button
                                     type="button"
                                     onClick={() => setCategoriaActiva(null)}
-                                    className={`shrink-0 px-4 py-2.5 rounded-full text-sm font-semibold transition-all min-h-[40px] flex items-center ${categoriaActiva === null
-                                        ? 'bg-[#1A0087] text-white shadow-sm'
-                                        : 'bg-gray-100 text-[#232323] hover:bg-gray-200 active:bg-gray-300'
-                                        }`}
+                                    className={`shrink-0 px-4 py-2.5 rounded-full text-sm font-semibold transition-all min-h-[40px] flex items-center ${categoriaActiva === null ? 'bg-[#1A0087] text-white shadow-sm' : 'bg-gray-100 text-[#232323] hover:bg-gray-200'}`}
                                 >
                                     Todas
                                 </button>
@@ -136,10 +123,7 @@ export function ProductoBuscadorModal({
                                         key={cat}
                                         type="button"
                                         onClick={() => setCategoriaActiva(cat)}
-                                        className={`shrink-0 px-4 py-2.5 rounded-full text-sm font-semibold transition-all min-h-[40px] flex items-center ${categoriaActiva === cat
-                                            ? 'bg-[#1A0087] text-white shadow-sm'
-                                            : 'bg-gray-100 text-[#232323] hover:bg-gray-200 active:bg-gray-300'
-                                            }`}
+                                        className={`shrink-0 px-4 py-2.5 rounded-full text-sm font-semibold transition-all min-h-[40px] flex items-center ${categoriaActiva === cat ? 'bg-[#1A0087] text-white shadow-sm' : 'bg-gray-100 text-[#232323] hover:bg-gray-200'}`}
                                     >
                                         {cat}
                                     </button>
@@ -149,50 +133,32 @@ export function ProductoBuscadorModal({
                     </div>
                 )}
 
-                {/* LISTA */}
                 <div className="flex-1 overflow-y-auto">
                     {ordenados.length === 0 ? (
                         <div className="p-8 text-center">
                             <MagnifyingGlassIcon className="w-12 h-12 text-gray-300 mx-auto mb-2" />
                             <p className="text-sm text-[#828282]">
-                                {buscando
-                                    ? 'Buscando…'
-                                    : termino.length > 0 && termino.length < 2
-                                        ? 'Escribe al menos 2 letras para buscar'
-                                        : 'Sin resultados'}
+                                {buscando ? 'Buscando…' : termino.length > 0 && termino.length < 2 ? 'Escribe al menos 2 letras para buscar' : 'Sin resultados'}
                             </p>
-                            {categoriaActiva && (
-                                <button
-                                    type="button"
-                                    onClick={() => setCategoriaActiva(null)}
-                                    className="mt-3 text-xs text-[#1A0087] font-medium hover:underline"
-                                >
-                                    Quitar filtro de categoría
-                                </button>
-                            )}
                         </div>
                     ) : (
                         <div className="divide-y divide-gray-100">
                             {ordenados.map(p => {
                                 const congelado = esProductoCongelado(p)
+                                // 🔥 Usamos precio_mayorista si existe, sino el precio normal
+                                const precioFinal = p.precio_mayorista ?? p.precio
+
                                 return (
                                     <button
                                         key={p.id}
                                         type="button"
                                         disabled={congelado}
-                                        onClick={() => {
-                                            onSeleccionar(p)
-                                            onClose()
-                                        }}
-                                        className={`w-full text-left p-4 transition-colors ${congelado
-                                            ? 'bg-gray-50 cursor-not-allowed opacity-60'
-                                            : 'hover:bg-[#1A0087]/5 active:bg-[#1A0087]/10'
-                                            }`}
+                                        onClick={() => { onSeleccionar(p); onClose() }}
+                                        className={`w-full text-left p-4 transition-colors ${congelado ? 'bg-gray-50 cursor-not-allowed opacity-60' : 'hover:bg-[#1A0087]/5 active:bg-[#1A0087]/10'}`}
                                     >
                                         <div className="flex items-start gap-3">
                                             <div className="flex-1 min-w-0">
-                                                <p className={`text-sm font-semibold leading-tight break-words ${congelado ? 'text-gray-400' : 'text-[#232323]'
-                                                    }`}>
+                                                <p className={`text-sm font-semibold leading-tight break-words ${congelado ? 'text-gray-400' : 'text-[#232323]'}`}>
                                                     {p.nombre}
                                                 </p>
                                                 <p className="text-xs text-[#828282] mt-1 flex items-center gap-2 flex-wrap">
@@ -200,17 +166,14 @@ export function ProductoBuscadorModal({
                                                     {p.categoria && (
                                                         <>
                                                             {p.sku && <span>·</span>}
-                                                            <span className="bg-gray-100 px-1.5 py-0.5 rounded text-[10px] font-medium">
-                                                                {p.categoria}
-                                                            </span>
+                                                            <span className="bg-gray-100 px-1.5 py-0.5 rounded text-[10px] font-medium">{p.categoria}</span>
                                                         </>
                                                     )}
                                                 </p>
                                                 <p className="text-xs mt-1">
                                                     {congelado ? (
                                                         <span className="text-red-600 font-medium flex items-center gap-1">
-                                                            <LockClosedIcon className="w-3 h-3" />
-                                                            {motivoCongelado(p)}
+                                                            <LockClosedIcon className="w-3 h-3" />{motivoCongelado(p)}
                                                         </span>
                                                     ) : (
                                                         <span className="text-[#828282]">
@@ -220,14 +183,12 @@ export function ProductoBuscadorModal({
                                                 </p>
                                             </div>
                                             <div className="text-right shrink-0 flex flex-col items-end gap-1">
-                                                <span className={`text-sm font-bold ${congelado ? 'text-gray-400' : 'text-[#1A0087]'
-                                                    }`}>
-                                                    {formatCOP(p.precio)}
+                                                <span className={`text-sm font-bold ${congelado ? 'text-gray-400' : 'text-[#1A0087]'}`}>
+                                                    {formatCOP(precioFinal)}
                                                 </span>
                                                 {!congelado && (
                                                     <span className="flex items-center gap-1 text-[11px] font-medium text-[#1A0087] bg-[#1A0087]/10 px-2 py-0.5 rounded-lg">
-                                                        <PlusIcon className="w-3 h-3" />
-                                                        Agregar
+                                                        <PlusIcon className="w-3 h-3" /> Agregar
                                                     </span>
                                                 )}
                                             </div>

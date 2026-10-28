@@ -112,12 +112,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <ProvidersWithKey>
-      <NotificacionesProvider rol={rol} userId={userId}>
-        <DashboardContent rol={rol}>
-          {children}
-        </DashboardContent>
-      </NotificacionesProvider>
-    </ProvidersWithKey>
+    <NotificacionesProvider>  {/* 🔥 SIN PROPS */}
+      <DashboardContent rol={rol}>
+        {children}
+      </DashboardContent>
+    </NotificacionesProvider>
   )
 }

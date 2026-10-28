@@ -17,11 +17,3 @@ export function calcularRangos(f: FiltrosStats): RangoFechas {
 export function iso(d: Date) {
     return d.toISOString()
 }
-
-export function etiquetaMes(d: Date) {
-    return d.toLocaleDateString('es-CO', { month: 'short', year: 'numeric' })
-}
-
-export function etiquetaDia(d: Date) {
-    return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })
-}

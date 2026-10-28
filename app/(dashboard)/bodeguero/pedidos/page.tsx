@@ -91,7 +91,7 @@ export default function PedidosBodegueroPage() {
           cantidad_aprobada,
           precio_unitario,
           tipo_precio,
-          productos ( id, nombre, precio, codigo )
+          productos ( id, nombre, precio,precio_mayorista, codigo )
         )
       `)
       .eq('bodega_id', tiendaActual.id)

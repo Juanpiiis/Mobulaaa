@@ -48,7 +48,14 @@ export async function POST(req: NextRequest) {
                 *,
                 clientes(nombre, cc_nit, telefono, email, direccion),
                 bodegas(nombre),
-                detalle_pedido(cantidad_solicitada, cantidad_aprobada, precio_unitario, tipo_precio, productos(nombre, codigo, precio))            `)
+                detalle_pedido(
+                    cantidad_solicitada, 
+                    cantidad_aprobada, 
+                    precio_unitario, 
+                    tipo_precio, 
+                    productos(nombre, codigo, precio, precio_mayorista)
+                )            
+            `)
             .eq('id', pedidoId)
             .single()
 
@@ -61,7 +68,8 @@ export async function POST(req: NextRequest) {
         const marcaAgua = getMarcaAgua(estadoCotizacion)
         const items = (pedido.detalle_pedido || []).map((d: any) => {
             const cantidad = d.cantidad_aprobada || d.cantidad_solicitada
-            const precioBase = d.productos?.precio || 0
+            // 🔥 Usamos precio_mayorista como base
+            const precioBase = d.productos?.precio_mayorista ?? d.productos?.precio ?? 0
             const precio = d.precio_unitario ?? precioBase
             const subido = d.precio_unitario != null && d.precio_unitario > precioBase
             return {

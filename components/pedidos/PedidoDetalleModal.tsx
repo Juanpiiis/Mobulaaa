@@ -38,7 +38,13 @@ interface DetallePedido {
     producto_id: string
     precio_unitario?: number | null
     tipo_precio?: string | null
-    productos: { id: string; nombre: string; precio: number; codigo?: string | null }
+    productos: {
+        id: string
+        nombre: string
+        precio: number
+        precio_mayorista?: number | null
+        codigo?: string | null
+    }
 }
 
 export interface PedidoCompleto {
@@ -308,7 +314,7 @@ export function PedidoDetalleModal({
                 .select(`
                     cantidad_disponible,
                     productos!inner(
-                        id, nombre, precio, categoria, sku,
+                        id, nombre, precio, precio_mayorista, categoria, sku,
                         congelado_manual, limite_congelado
                     )
                 `)
@@ -322,6 +328,7 @@ export function PedidoDetalleModal({
                     id: i.productos?.id,
                     nombre: i.productos?.nombre,
                     precio: i.productos?.precio,
+                    precio_mayorista: i.productos?.precio_mayorista,
                     categoria: i.productos?.categoria,
                     sku: i.productos?.sku,
                     stock_disponible: i.cantidad_disponible || 0,
@@ -561,9 +568,11 @@ export function PedidoDetalleModal({
             setErrorEdicion('Ese producto ya está en el pedido')
             return
         }
+
+        const precioBase = p.precio_mayorista ?? p.precio
         setItemsEdit([...itemsEdit, {
             producto_id: p.id, cantidad: 1, nombre: p.nombre,
-            precio: p.precio, precio_unitario: p.precio, precioTexto: String(p.precio),
+            precio: precioBase, precio_unitario: precioBase, precioTexto: String(precioBase),
         }])
         setErrorEdicion('')
     }
@@ -854,11 +863,12 @@ export function PedidoDetalleModal({
                                 <div className="divide-y divide-gray-100">
                                     {pedido.detalle_pedido.map(d => {
                                         const cantidad = d.cantidad_aprobada ?? d.cantidad_solicitada
-                                        const precioBase = d.productos.precio
+                                        const precioBase = d.productos.precio_mayorista ?? d.productos.precio
                                         const precioUnit = d.precio_unitario ?? precioBase
                                         const subido = d.precio_unitario != null && d.precio_unitario > precioBase
+
                                         return (
-                                            <div key={d.id} className={`py-3 flex items-center justify-between gap-3 ${subido ? 'bg-amber-50/50 -mx-2 px-2 rounded-lg' : ''}`}>
+                                            <div key={d.id} className={`py-3 flex items-center justify-between gap-3 ${subido ? 'bg-red-50/50 -mx-2 px-2 rounded-lg' : ''}`}>
                                                 <div className="min-w-0 flex-1">
                                                     <p className="text-sm font-medium text-[#232323] truncate">{d.productos.nombre}</p>
                                                     {d.productos.codigo && <p className="text-[11px] text-[#828282] font-mono mt-0.5">{d.productos.codigo}</p>}
@@ -866,15 +876,15 @@ export function PedidoDetalleModal({
                                                         <p className="text-[11px] mt-1 tabular-nums flex items-center gap-1 flex-wrap">
                                                             <span className="text-[#828282]">{formatCOP(precioBase)}</span>
                                                             <span className="text-[#828282]">→</span>
-                                                            <span className="text-amber-700 font-semibold">{formatCOP(precioUnit)}</span>
-                                                            <span className="text-amber-600 font-bold">*</span>
+                                                            <span className="text-red-700 font-semibold">{formatCOP(precioUnit)}</span>
+                                                            <span className="text-red-600 font-bold">*</span>
                                                         </p>
                                                     )}
                                                 </div>
                                                 <div className="text-right shrink-0">
                                                     <p className="text-sm font-semibold text-[#232323] tabular-nums">×{cantidad}</p>
-                                                    <p className={`text-xs tabular-nums ${subido ? 'text-amber-700 font-semibold' : 'text-[#828282]'}`}>
-                                                        {formatCOP(precioUnit)}{subido && <span className="text-amber-600 font-bold ml-0.5">*</span>}
+                                                    <p className={`text-xs tabular-nums ${subido ? 'text-red-700 font-semibold' : 'text-[#828282]'}`}>
+                                                        {formatCOP(precioUnit)}{subido && <span className="text-red-600 font-bold ml-0.5">*</span>}
                                                     </p>
                                                 </div>
                                             </div>
@@ -950,6 +960,7 @@ export function PedidoDetalleModal({
                         </div>
                     ) : (
                         <>
+                            {/* BOTONES DE BODEGUERO (SOLO SI ES SU ROL) */}
                             {pedido.estado === 'aprobado_cartera' && esBodeguero && (
                                 <button onClick={handleAceptar} disabled={procesando} className="w-full min-h-[48px] px-4 py-3 bg-green-600 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
                                     {procesando ? 'Procesando...' : <><CheckIcon className="w-5 h-5" />Aceptar y empezar a alistar</>}
@@ -965,12 +976,13 @@ export function PedidoDetalleModal({
                                     {procesando ? 'Despachando...' : <><TruckIcon className="w-5 h-5" />Despachar</>}
                                 </button>
                             )}
-                            {pedido.estado === 'despachado' && (
+                            {pedido.estado === 'despachado' && esBodeguero && (
                                 <button onClick={handleMarcarEntregado} disabled={procesando} className="w-full min-h-[48px] px-4 py-3 bg-gray-700 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
                                     {procesando ? 'Procesando...' : <><ArchiveBoxIcon className="w-5 h-5" />Marcar como entregado</>}
                                 </button>
                             )}
 
+                            {/* BOTONES EXCLUSIVOS DEL ADMIN (EDITAR, RECHAZAR, CANCELAR, DEVOLVER) */}
                             {esAdmin && !esCancelado && (
                                 <div className="grid grid-cols-2 gap-2">
                                     {puedeEditar && (
@@ -1001,7 +1013,7 @@ export function PedidoDetalleModal({
                     )}
                 </div>
 
-                {/* MODAL CANCELAR */}
+                {/* MODALES SECUNDARIOS: CANCELAR, RECHAZAR, RETROCEDER */}
                 {mostrarCancelar && (
                     <div className="absolute inset-0 bg-black/40 flex items-end sm:items-center justify-center z-10 p-0 sm:p-4">
                         <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
@@ -1028,7 +1040,6 @@ export function PedidoDetalleModal({
                     </div>
                 )}
 
-                {/* MODAL RECHAZAR */}
                 {mostrarRechazar && (
                     <div className="absolute inset-0 bg-black/40 flex items-end sm:items-center justify-center z-10 p-0 sm:p-4">
                         <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
@@ -1056,7 +1067,6 @@ export function PedidoDetalleModal({
                     </div>
                 )}
 
-                {/* MODAL RETROCEDER */}
                 {mostrarRetroceder && retrocesoDestino && (
                     <div className="absolute inset-0 bg-black/50 flex items-end sm:items-center justify-center z-20 p-0 sm:p-4">
                         <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">

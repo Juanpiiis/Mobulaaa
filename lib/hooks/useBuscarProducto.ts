@@ -8,6 +8,7 @@ export interface ProductoBusqueda {
     id: string
     nombre: string
     precio: number
+    precio_mayorista: number | null // 🔥 AGREGADO
     categoria: string | null
     sku: string | null
     stock_disponible: number
@@ -17,35 +18,19 @@ export interface ProductoBusqueda {
 
 const LIMITE_DEFAULT = 150
 
-/**
- * Determina si un producto está congelado.
- * - Si congelado_manual = true → SIEMPRE congelado
- * - Si limite_congelado = 0 → NUNCA se congela automático
- * - Si limite_congelado es null → usa 150 por defecto
- * - En otro caso → congelado si stock <= limite
- */
 export function esProductoCongelado(p: ProductoBusqueda): boolean {
     if (p.congelado_manual) return true
-
     const limite = p.limite_congelado ?? LIMITE_DEFAULT
     if (limite === 0) return false
-
     return p.stock_disponible <= limite
 }
 
-/**
- * Devuelve el motivo por el que está congelado (para mostrar en UI).
- */
 export function motivoCongelado(p: ProductoBusqueda): string {
     if (p.congelado_manual) return 'Congelado manualmente'
     const limite = p.limite_congelado ?? LIMITE_DEFAULT
     return `Congelado (stock ${p.stock_disponible} ≤ ${limite})`
 }
 
-/**
- * Sanea el término de búsqueda para que sea seguro pasarlo a PostgREST (.or).
- * Quita los caracteres que rompen la sintaxis del filtro y los reemplaza por espacio.
- */
 function sanearTermino(t: string): string {
     return t.replace(/[,()%*\\]/g, ' ').trim()
 }
@@ -84,6 +69,7 @@ export function useBuscarProducto(
                             id, 
                             nombre, 
                             precio, 
+                            precio_mayorista, 
                             categoria, 
                             sku,
                             congelado_manual,
@@ -108,7 +94,6 @@ export function useBuscarProducto(
                         ?.map((i: any) => ({
                             ...i.productos,
                             stock_disponible: i.cantidad_disponible || 0,
-                            // ✅ Ahora los leemos desde i.productos (donde sí existen en BD)
                             congelado_manual: i.productos.congelado_manual ?? false,
                             limite_congelado: i.productos.limite_congelado ?? null,
                         }))

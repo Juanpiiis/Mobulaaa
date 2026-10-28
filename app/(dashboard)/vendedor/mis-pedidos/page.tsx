@@ -104,7 +104,7 @@ function estaEnRango(fechaISO: string, rango: 'hoy' | '7d' | '30d' | 'mes' | 'to
 
 export default function MisPedidosPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
-  const [productos, setProductos] = useState<ProductoBusqueda[]>([])
+  const [productos, setProductos] = useState<(ProductoBusqueda & { precio_mayorista?: number })[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -157,7 +157,7 @@ export default function MisPedidosPage() {
           cantidad_aprobada,
           precio_unitario,
           tipo_precio,
-          productos ( id, nombre, precio, codigo )
+          productos ( id, nombre, precio,precio_mayorista, codigo )
         )
       `)
       .eq('vendedor_id', user?.id)
@@ -169,7 +169,7 @@ export default function MisPedidosPage() {
       .select(`
         cantidad_disponible,
         productos!inner(
-          id, nombre, precio, categoria, sku,
+          id, nombre, precio, precio_mayorista, categoria, sku,
           congelado_manual, limite_congelado
         )
       `)
@@ -183,6 +183,7 @@ export default function MisPedidosPage() {
           id: i.productos?.id,
           nombre: i.productos?.nombre,
           precio: i.productos?.precio,
+          precio_mayorista: i.productos?.precio_mayorista, // 🔥 Agregado
           categoria: i.productos?.categoria,
           sku: i.productos?.sku,
           stock_disponible: i.cantidad_disponible || 0,
@@ -206,7 +207,7 @@ export default function MisPedidosPage() {
     const subtotal = items.reduce((acc, item) => {
       const prod = productos.find((p) => p.id === item.producto_id)
       if (!prod || !item.cantidad) return acc
-      const precio = item.precio_unitario ?? prod.precio
+      const precio = item.precio_unitario ?? (prod.precio_mayorista ?? prod.precio)
       return acc + precio * parseInt(item.cantidad)
     }, 0)
     const porcentaje = calcularDescuento(subtotal)
@@ -241,9 +242,12 @@ export default function MisPedidosPage() {
       if (cant > prod.stock_disponible) {
         return `"${prod.nombre}" solo tiene ${prod.stock_disponible} unidades disponibles`
       }
-      const precio = item.precio_unitario ?? prod.precio
-      if (precio < prod.precio) {
-        return `El precio de "${prod.nombre}" no puede ser menor a ${formatCOP(prod.precio)}`
+
+      // 🔥 Validar contra el precio mayorista (o el normal si no hay)
+      const precioBase = prod.precio_mayorista ?? prod.precio
+      const precio = item.precio_unitario ?? precioBase
+      if (precio < precioBase) {
+        return `El precio de "${prod.nombre}" no puede ser menor a ${formatCOP(precioBase)}`
       }
     }
     return null
@@ -292,17 +296,19 @@ export default function MisPedidosPage() {
         return
       }
 
+      // En handleSave, busca esta parte y reemplázala:
       const { error: errDetalle } = await supabase.from('detalle_pedido').insert(
         itemsValidos.map((item) => {
           const prod = productos.find(p => p.id === item.producto_id)
-          const precioBase = prod?.precio ?? 0
+          const precioBase = prod?.precio_mayorista ?? prod?.precio ?? 0
           const precioFinal = item.precio_unitario ?? precioBase
+
           return {
             pedido_id: pedido.id,
             producto_id: item.producto_id,
             cantidad_solicitada: parseInt(item.cantidad),
-            precio_unitario: precioFinal,
-            tipo_precio: 'unidad',
+            precio_unitario: precioFinal, // 🔥 Se guarda el precio que puso el vendedor
+            tipo_precio: 'mayorista',
           }
         })
       )
@@ -330,8 +336,10 @@ export default function MisPedidosPage() {
     setProductoBuscadorAbierto(false)
   }
 
-  const handleAgregarProducto = (p: ProductoBusqueda) => {
-    setItems([...items, { producto_id: p.id, cantidad: '1', precio_unitario: p.precio }])
+  const handleAgregarProducto = (p: ProductoBusqueda & { precio_mayorista?: number }) => {
+    // 🔥 Al agregar, usar el precio mayorista por defecto
+    const precioInicial = p.precio_mayorista ?? p.precio
+    setItems([...items, { producto_id: p.id, cantidad: '1', precio_unitario: precioInicial }])
     setErrorStock(null)
   }
 
@@ -719,9 +727,9 @@ export default function MisPedidosPage() {
                               <ProductoSelector
                                 key={`${item.producto_id}-${i}`}
                                 index={i}
-                                producto={prod}
+                                producto={prod as any}
                                 cantidad={item.cantidad}
-                                precioUnitario={item.precio_unitario ?? prod.precio}
+                                precioUnitario={item.precio_unitario ?? (prod.precio_mayorista ?? prod.precio)}
                                 onCantidadChange={handleCantidadChange}
                                 onPrecioChange={handlePrecioChange}
                                 onEliminar={handleEliminarItem}
@@ -846,8 +854,8 @@ export default function MisPedidosPage() {
       <ProductoBuscadorModal
         abierto={productoBuscadorAbierto}
         onClose={() => setProductoBuscadorAbierto(false)}
-        onSeleccionar={handleAgregarProducto}
-        productosBase={productos}
+        onSeleccionar={handleAgregarProducto as any}
+        productosBase={productos as any}
         bodegaId={tiendaActual?.id}
         formatCOP={formatCOP}
         productosExcluidos={productosExcluidos}

@@ -46,7 +46,8 @@ export default function EstadisticasPage() {
       case 'clientes': return <ClientesTab filtros={filtros} />
       case 'pedidos': return <PedidosTab filtros={filtros} />
       case 'bodega': return <BodegaTab filtros={filtros} />
-      case 'margen': return <MargenTab />
+      case 'margen': return <MargenTab filtros={filtros} />
+
     }
   }, [tab, filtros])
 

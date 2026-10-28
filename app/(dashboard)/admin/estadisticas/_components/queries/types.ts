@@ -2,8 +2,8 @@ export type PeriodoTipo = 'mes' | 'anio' | 'rango'
 
 export interface FiltrosStats {
     tipo: PeriodoTipo
-    desde: string   // ISO yyyy-mm-dd
-    hasta: string   // ISO yyyy-mm-dd
+    desde: string
+    hasta: string
     bodegaId: string | null
     comparar: boolean
 }
@@ -19,10 +19,10 @@ export const ESTADOS_VENTA = [
     'listo_para_despacho',
     'despachado',
     'entregado',
-] as const
+]
 
 export const ESTADOS_PERDIDA = [
     'cancelado',
     'rechazado_cartera',
     'rechazado_bodega',
-] as const
+]
