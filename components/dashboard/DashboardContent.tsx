@@ -319,7 +319,10 @@ export default function DashboardContent({ children, rol }: { children: React.Re
         </header>
 
         <main className="dashboard-main">
-          {rol !== 'admin' && bodegas.length === 0 ? (
+          {/* 🔥 CORRECCIÓN: Si es admin, siempre renderizamos el contenido */}
+          {rol === 'admin' ? (
+            children
+          ) : bodegas.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state__card">
                 <div className="empty-state__icon-wrapper">
