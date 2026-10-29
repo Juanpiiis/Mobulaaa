@@ -3,6 +3,14 @@ import type { NextConfig } from 'next'
 const nextConfig: NextConfig = {
   serverExternalPackages: ['@react-pdf/renderer'],
 
+  // 🔥 ESTO ES LO QUE ARREGLA EL ERROR DE HELVETICA.CJS
+  outputFileTracingIncludes: {
+    '/api/cotizacion/**': [
+      './node_modules/pdfkit/js/standard-fonts/*.cjs',
+      './node_modules/pdfkit/js/data/*.afm',
+    ],
+  },
+
   allowedDevOrigins: ['*.ngrok-free.app', 'localhost:3000'],
 
   experimental: {
@@ -10,7 +18,7 @@ const nextConfig: NextConfig = {
       allowedOrigins: [
         'localhost:3000',
         '*.ngrok-free.app',
-        'mobulaaa.vercel.app', // 🔥 AGREGA ESTO
+        'mobulaaa.vercel.app',
       ],
     },
   },
