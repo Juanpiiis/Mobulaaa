@@ -12,6 +12,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [loading, setLoading] = useState(true)
   const [bodegasAsignadas, setBodegasAsignadas] = useState<string[] | null>(null)
   const router = useRouter()
+
+  // Al usar el Singleton, esto ya no creará instancias duplicadas
   const supabase = createClient()
 
   useEffect(() => {
@@ -45,7 +47,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         if (userData.rol === 'admin') {
           setBodegasAsignadas([])
-          setLoading(false)
           return
         }
 
@@ -59,11 +60,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         }
 
         setBodegasAsignadas(bodegasData?.map(b => b.bodega_id) || [])
-        setLoading(false)
 
       } catch (error) {
         console.error('Error en checkAuth:', error)
         router.push('/login')
+      } finally {
+        // 🔥 ESTO ES LO QUE FALTABA: Pase lo que pase, quitamos el "Cargando panel..."
+        setLoading(false)
       }
     }
 
@@ -106,7 +109,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
     )
   }
-
 
   return (
     <ProvidersWithKey>
