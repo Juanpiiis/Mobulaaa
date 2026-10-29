@@ -8,55 +8,92 @@ import { ProvidersWithKey } from '@/components/ProvidersWithKey'
 import DashboardContent from '@/components/dashboard/DashboardContent'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  // 🔥 FORZAMOS EL ROL Y QUITAMOS EL LOADING INICIAL
-  const [rol, setRol] = useState('admin')
-  const [loading, setLoading] = useState(false) // <-- Ya no esperamos
-  const [bodegasAsignadas, setBodegasAsignadas] = useState<string[] | null>([])
+  const [rol, setRol] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [sinBodega, setSinBodega] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
-    // Validación en segundo plano (no bloquea el renderizado)
     const checkAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
 
         if (!session) {
-          // Si no hay sesión, expulsamos al login
-          window.location.href = '/login'
+          router.push('/login')
           return
         }
 
-        const { data: userData } = await supabase
+        const { data: userData, error } = await supabase
           .from('usuarios')
           .select('rol, id, activo')
           .eq('id', session.user.id)
           .single()
 
-        if (userData?.activo === false) {
-          await supabase.auth.signOut()
-          window.location.href = '/login?error=inactivo'
+        if (error || !userData) {
+          router.push('/login')
           return
         }
 
-        // Si hay un rol distinto, lo actualizamos en segundo plano
-        if (userData?.rol) {
-          setRol(userData.rol)
+        if (!userData.activo) {
+          await supabase.auth.signOut()
+          router.push('/login?error=inactivo')
+          return
         }
+
+        setRol(userData.rol || '')
+
+        // 🔥 SI ES ADMIN, NO REVISAMOS BODEGAS
+        if (userData.rol === 'admin') {
+          setSinBodega(false)
+          setLoading(false)
+          return
+        }
+
+        // 🔥 SI ES BODEGUERO/CARTERA/VENDEDOR, REVISAMOS SUS BODEGAS
+        const { data: bodegasData, error: bodegasError } = await supabase
+          .from('usuario_bodegas')
+          .select('bodega_id')
+          .eq('usuario_id', session.user.id)
+
+        if (bodegasError) {
+          console.error('Error al cargar bodegas:', bodegasError.message)
+          setLoading(false)
+          return
+        }
+
+        // Si no tiene bodegas asignadas, lo bloqueamos
+        if (!bodegasData || bodegasData.length === 0) {
+          setSinBodega(true)
+        } else {
+          setSinBodega(false)
+        }
+
+        setLoading(false)
 
       } catch (error) {
         console.error('Error en checkAuth:', error)
-        // Si falla la red, no hacemos nada, dejamos que el panel cargue
+        router.push('/login')
       }
     }
 
     checkAuth()
-  }, [])
+  }, [supabase, router])
 
-  // 🔥 ELIMINAMOS EL BLOQUE "IF (LOADING)" POR COMPLETO
+  // 🔥 MIENTRAS VALIDA, MOSTRAMOS UN SPINNER
+  if (loading) {
+    return (
+      <div className="loading-screen min-h-[100dvh]">
+        <div className="loading-screen__inner">
+          <div className="loading-screen__spinner"></div>
+          <p className="loading-screen__text">Cargando panel...</p>
+        </div>
+      </div>
+    )
+  }
 
-  // ✅ BLOQUEO: Rol no-admin sin bodegas (Solo aplica si no es admin)
-  if (rol !== 'admin' && bodegasAsignadas !== null && bodegasAsignadas.length === 0) {
+  // 🔥 SI NO TIENE BODEGA, BLOQUEAMOS
+  if (sinBodega) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
         <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 text-center">
@@ -70,7 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button
             onClick={async () => {
               await supabase.auth.signOut()
-              window.location.href = '/login'
+              router.push('/login')
             }}
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-xl transition-colors"
           >

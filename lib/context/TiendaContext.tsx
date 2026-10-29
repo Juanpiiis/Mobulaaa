@@ -16,6 +16,7 @@ interface TiendaContextType {
   bodegas: Bodega[]
   recargarBodegas: () => Promise<void>
   soloUnaBodega: boolean
+  cargandoBodegas: boolean
 }
 
 const TiendaContext = createContext<TiendaContextType>({
@@ -24,20 +25,27 @@ const TiendaContext = createContext<TiendaContextType>({
   bodegas: [],
   recargarBodegas: async () => { },
   soloUnaBodega: false,
+  cargandoBodegas: true,
 })
+
+const STORAGE_KEY = 'mobulaa-bodega-actual' // 🔥 CLAVE PARA GUARDAR EN LOCALSTORAGE
 
 export function TiendaProvider({ children }: { children: ReactNode }) {
   const [tiendaActual, setTiendaActual] = useState<Bodega | null>(null)
   const [bodegas, setBodegas] = useState<Bodega[]>([])
+  const [cargandoBodegas, setCargandoBodegas] = useState(true)
   const supabase = createClient()
 
   const { mostrarAviso, continuarSesion, salirAhora, segundosRestantes } = useInactivityLogout()
 
   const cargarBodegas = useCallback(async () => {
+    setCargandoBodegas(true)
+
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       setBodegas([])
       setTiendaActual(null)
+      setCargandoBodegas(false)
       return
     }
 
@@ -71,16 +79,25 @@ export function TiendaProvider({ children }: { children: ReactNode }) {
 
     setBodegas(lista)
 
+    // 🔥 RECUPERAR LA BODEGA GUARDADA EN LOCALSTORAGE
+    const bodegaGuardadaId = localStorage.getItem(STORAGE_KEY)
+
     setTiendaActual((prev) => {
       if (lista.length === 0) return null
 
-      // Si ya había una seleccionada y sigue existiendo, la mantenemos
+      // 1. Si ya había una bodega seleccionada (en memoria), mantenerla
       if (prev) {
         const existe = lista.find((b) => b.id === prev.id)
         if (existe) return existe
       }
 
-      // ✅ Si es admin, buscar Bogotá por defecto
+      // 2. Si hay una bodega guardada en localStorage, usarla
+      if (bodegaGuardadaId) {
+        const guardada = lista.find((b) => b.id === bodegaGuardadaId)
+        if (guardada) return guardada
+      }
+
+      // 3. Si es admin, buscar Bogotá por defecto
       if (esAdmin) {
         const bogota = lista.find((b) =>
           b.nombre.toLowerCase().includes('bogotá') ||
@@ -89,14 +106,26 @@ export function TiendaProvider({ children }: { children: ReactNode }) {
         if (bogota) return bogota
       }
 
-      // Si no hay Bogotá o no es admin, toma la primera
+      // 4. Si no hay Bogotá o no es admin, toma la primera
       return lista[0]
     })
+
+    setCargandoBodegas(false)
   }, [supabase])
 
   useEffect(() => {
     cargarBodegas()
   }, [cargarBodegas])
+
+  // 🔥 FUNCIÓN PARA CAMBIAR BODEGA Y GUARDARLA EN LOCALSTORAGE
+  const handleSetTiendaActual = useCallback((bodega: Bodega | null) => {
+    setTiendaActual(bodega)
+    if (bodega) {
+      localStorage.setItem(STORAGE_KEY, bodega.id)
+    } else {
+      localStorage.removeItem(STORAGE_KEY)
+    }
+  }, [])
 
   const soloUnaBodega = bodegas.length <= 1
 
@@ -104,10 +133,11 @@ export function TiendaProvider({ children }: { children: ReactNode }) {
     <TiendaContext.Provider
       value={{
         tiendaActual,
-        setTiendaActual,
+        setTiendaActual: handleSetTiendaActual, // 🔥 Usamos la función que guarda en localStorage
         bodegas,
         recargarBodegas: cargarBodegas,
         soloUnaBodega,
+        cargandoBodegas,
       }}
     >
       {children}

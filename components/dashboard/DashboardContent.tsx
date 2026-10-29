@@ -10,8 +10,8 @@ import { useTheme } from '@/lib/context/ThemeContext'
 import {
   HomeIcon, CubeIcon, BuildingStorefrontIcon, UsersIcon,
   ArrowsRightLeftIcon, ClipboardDocumentListIcon, ChartBarIcon,
-  ArrowLeftOnRectangleIcon, ShoppingCartIcon, CreditCardIcon,
-  DocumentTextIcon, BeakerIcon, CalculatorIcon, ClipboardIcon,
+  ArrowLeftOnRectangleIcon,
+  DocumentTextIcon, ClipboardIcon,
   ChevronDownIcon, BellIcon, PlusIcon,
   SunIcon, MoonIcon, ArrowLeftIcon,
 } from '@heroicons/react/24/outline'
@@ -163,7 +163,8 @@ function Campana() {
    Componente: DashboardContent (Layout visual)
    ============================================================ */
 export default function DashboardContent({ children, rol }: { children: React.ReactNode; rol: string }) {
-  const { tiendaActual, setTiendaActual, bodegas, soloUnaBodega } = useTienda()
+  // 🔥 EXTRAEMOS cargandoBodegas
+  const { tiendaActual, setTiendaActual, bodegas, soloUnaBodega, cargandoBodegas } = useTienda()
   const router = useRouter()
   const supabase = createClient()
   const pathname = usePathname()
@@ -187,6 +188,18 @@ export default function DashboardContent({ children, rol }: { children: React.Re
   const esPaginaBodegas = pathname === '/admin/bodegas'
 
   const renderSelector = () => {
+    if (cargandoBodegas) {
+      return (
+        <div className="sidebar-store-selector">
+          <p className="sidebar-store-selector__label">Tienda / Bodega</p>
+          <div className="bg-white/10 text-white px-3 py-2.5 rounded-xl text-sm font-medium min-h-[44px] flex items-center gap-2">
+            <div className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+            <span>Cargando...</span>
+          </div>
+        </div>
+      )
+    }
+
     if (rol !== 'admin' && bodegas.length === 0) {
       return (
         <div className="sidebar-store-selector">
@@ -248,7 +261,13 @@ export default function DashboardContent({ children, rol }: { children: React.Re
 
   return (
     <div className="dashboard-shell">
-      <div className={`sidebar-overlay ${isSidebarOpen ? 'sidebar-overlay--visible' : ''}`} onClick={() => setIsSidebarOpen(false)} />
+      {/* 🔥 EL OVERLAY SOLO SE RENDERIZA SI EL SIDEBAR ESTÁ ABIERTO */}
+      {isSidebarOpen && (
+        <div
+          className="sidebar-overlay sidebar-overlay--visible"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
       {/* ======================== SIDEBAR ======================== */}
       <aside className={`dashboard-sidebar ${isSidebarOpen ? 'dashboard-sidebar--open' : 'dashboard-sidebar--collapsed'} pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]`}>
@@ -319,8 +338,13 @@ export default function DashboardContent({ children, rol }: { children: React.Re
         </header>
 
         <main className="dashboard-main">
-          {/* 🔥 CORRECCIÓN: Si es admin, siempre renderizamos el contenido */}
-          {rol === 'admin' ? (
+          {/* 🔥 SI ESTÁ CARGANDO, MOSTRAMOS UN SPINNER */}
+          {cargandoBodegas ? (
+            <div className="flex flex-col items-center justify-center py-32 gap-4">
+              <div className="w-12 h-12 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
+              <p className="text-sm text-gray-400 font-medium">Cargando panel...</p>
+            </div>
+          ) : rol === 'admin' ? (
             children
           ) : bodegas.length === 0 ? (
             <div className="empty-state">
