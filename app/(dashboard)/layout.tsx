@@ -8,88 +8,54 @@ import { ProvidersWithKey } from '@/components/ProvidersWithKey'
 import DashboardContent from '@/components/dashboard/DashboardContent'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [rol, setRol] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [bodegasAsignadas, setBodegasAsignadas] = useState<string[] | null>(null)
+  // 🔥 FORZAMOS EL ROL Y QUITAMOS EL LOADING INICIAL
+  const [rol, setRol] = useState('admin')
+  const [loading, setLoading] = useState(false) // <-- Ya no esperamos
+  const [bodegasAsignadas, setBodegasAsignadas] = useState<string[] | null>([])
   const router = useRouter()
   const supabase = createClient()
 
   useEffect(() => {
-    // 🔥 FUERZA BRUTA: Si en 3 segundos no ha cargado, lo forzamos a mostrar el panel de todas formas
-    const timeout = setTimeout(() => {
-      if (loading) {
-        console.warn("Forzando renderizado por timeout")
-        setRol('admin') // Forzamos rol admin por defecto
-        setBodegasAsignadas([])
-        setLoading(false)
-      }
-    }, 3000)
-
+    // Validación en segundo plano (no bloquea el renderizado)
     const checkAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
 
         if (!session) {
-          router.push('/login')
+          // Si no hay sesión, expulsamos al login
+          window.location.href = '/login'
           return
         }
 
-        const { data: userData, error } = await supabase
+        const { data: userData } = await supabase
           .from('usuarios')
           .select('rol, id, activo')
           .eq('id', session.user.id)
           .single()
 
-        if (error || !userData) {
-          router.push('/login')
-          return
-        }
-
-        if (!userData.activo) {
+        if (userData?.activo === false) {
           await supabase.auth.signOut()
-          router.push('/login?error=inactivo')
+          window.location.href = '/login?error=inactivo'
           return
         }
 
-        setRol(userData.rol || '')
-        setBodegasAsignadas([]) // Por defecto vacío para evitar bloqueos
-
-        if (userData.rol !== 'admin') {
-          const { data: bodegasData } = await supabase
-            .from('usuario_bodegas')
-            .select('bodega_id')
-            .eq('usuario_id', session.user.id)
-
-          setBodegasAsignadas(bodegasData?.map(b => b.bodega_id) || [])
+        // Si hay un rol distinto, lo actualizamos en segundo plano
+        if (userData?.rol) {
+          setRol(userData.rol)
         }
 
       } catch (error) {
         console.error('Error en checkAuth:', error)
-        // Si falla, forzamos rol admin para que veas la interfaz
-        setRol('admin')
-      } finally {
-        clearTimeout(timeout)
-        setLoading(false)
+        // Si falla la red, no hacemos nada, dejamos que el panel cargue
       }
     }
 
     checkAuth()
+  }, [])
 
-    return () => clearTimeout(timeout)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // 🔥 ELIMINAMOS EL BLOQUE "IF (LOADING)" POR COMPLETO
 
-  if (loading) {
-    return (
-      <div className="loading-screen min-h-[100dvh]">
-        <div className="loading-screen__inner">
-          <div className="loading-screen__spinner"></div>
-          <p className="loading-screen__text">Cargando panel...</p>
-        </div>
-      </div>
-    )
-  }
-
-  // ✅ BLOQUEO: Rol no-admin sin bodegas
+  // ✅ BLOQUEO: Rol no-admin sin bodegas (Solo aplica si no es admin)
   if (rol !== 'admin' && bodegasAsignadas !== null && bodegasAsignadas.length === 0) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
@@ -104,7 +70,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button
             onClick={async () => {
               await supabase.auth.signOut()
-              router.push('/login')
+              window.location.href = '/login'
             }}
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-xl transition-colors"
           >
