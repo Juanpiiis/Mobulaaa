@@ -35,12 +35,12 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
                 if (!res.ok) throw new Error(json?.error || 'Error al generar')
                 if (cancelado) return
 
-                // base64 -> Blob
                 const bin = atob(json.pdfBase64 as string)
                 const len = bin.length
                 const bytes = new Uint8Array(len)
                 for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i)
                 const blob = new Blob([bytes], { type: 'application/pdf' })
+
                 const url = URL.createObjectURL(blob)
                 revoke = url
                 setPdfUrl(url)
@@ -70,11 +70,15 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
         a.remove()
     }
 
+    // 🔥 LA MAGIA ESTÁ AQUÍ: Agregamos los parámetros a la URL para ocultar la barra
+    const urlLimpia = pdfUrl ? `${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH` : ''
+
     return (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-0 sm:p-4">
+        <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-0 sm:p-4">
             <div className="bg-white w-full sm:max-w-4xl h-full sm:h-[90vh] rounded-none sm:rounded-2xl flex flex-col shadow-2xl overflow-hidden">
-                {/* HEADER */}
-                <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-3 shrink-0">
+
+                {/* HEADER PERSONALIZADO */}
+                <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-3 shrink-0 bg-[#F7F7FB]">
                     <div className="flex items-center gap-2 min-w-0">
                         <DocumentTextIcon className="w-5 h-5 text-[#1A0087] shrink-0" />
                         <div className="min-w-0">
@@ -90,24 +94,24 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
                         <button
                             onClick={descargar}
                             disabled={!pdfUrl}
-                            className="h-10 px-3 sm:px-4 flex items-center gap-2 rounded-lg bg-[#1A0087] text-white text-sm font-semibold hover:bg-[#130066] disabled:opacity-40"
+                            className="h-10 px-3 sm:px-4 flex items-center gap-2 rounded-lg bg-[#1A0087] text-white text-sm font-semibold hover:bg-[#130066] disabled:opacity-40 transition-colors"
                         >
                             <ArrowDownTrayIcon className="w-4 h-4" />
                             <span className="hidden sm:inline">Descargar</span>
                         </button>
                         <button
                             onClick={onClose}
-                            className="w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-100"
+                            className="w-10 h-10 flex items-center justify-center rounded-full text-gray-400 hover:bg-gray-200 transition-colors"
                         >
                             <XMarkIcon className="w-5 h-5" />
                         </button>
                     </div>
                 </div>
 
-                {/* BODY */}
-                <div className="flex-1 bg-gray-100 overflow-hidden">
+                {/* VISOR (iframe con URL limpia) */}
+                <div className="flex-1 bg-gray-200 overflow-hidden relative">
                     {cargando && (
-                        <div className="h-full flex flex-col items-center justify-center gap-3">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#F7F7FB] z-10">
                             <div className="w-10 h-10 border-4 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
                             <p className="text-sm text-[#828282]">
                                 Generando cotización...
@@ -115,7 +119,7 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
                         </div>
                     )}
                     {!cargando && error && (
-                        <div className="h-full flex flex-col items-center justify-center gap-3 p-6 text-center">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center bg-[#F7F7FB] z-10">
                             <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
                                 <XMarkIcon className="w-6 h-6 text-red-600" />
                             </div>
@@ -130,11 +134,13 @@ export function CotizacionPreview({ pedidoId, onClose }: Props) {
                             </button>
                         </div>
                     )}
+
+                    {/* 🔥 USAMOS IFRAME CON LA URL LIMPIA */}
                     {!cargando && pdfUrl && (
                         <iframe
-                            src={pdfUrl}
-                            title="Vista previa cotización"
-                            className="w-full h-full border-0"
+                            src={urlLimpia}
+                            title="Vista previa de cotización"
+                            className="w-full h-full border-0 bg-white"
                         />
                     )}
                 </div>
