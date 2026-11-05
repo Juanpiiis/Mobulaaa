@@ -4,19 +4,19 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['@react-pdf/renderer', 'pdfkit'],
 
   outputFileTracingIncludes: {
-    // 🔥 Usar la ruta exacta de tu API, no el comodín /** 
-    // (Next.js a veces ignora los comodines en App Router)
     '/api/cotizacion/generar': [
-      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/standard-fonts/*.cjs',
-      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/data/*.afm',
-      './node_modules/pdfkit/js/standard-fonts/*.cjs',
-      './node_modules/pdfkit/js/data/*.afm',
+      // 🔥 Copiar TODA la carpeta standard-fonts (incluye subcarpeta chunks/)
+      './node_modules/pdfkit/js/standard-fonts/**/*',
+      './node_modules/pdfkit/js/data/**/*',
+      // Por si acaso Vercel todavía usa la ruta anidada
+      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/standard-fonts/**/*',
+      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/data/**/*',
     ],
     '/api/cotizacion/preview': [
-      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/standard-fonts/*.cjs',
-      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/data/*.afm',
-      './node_modules/pdfkit/js/standard-fonts/*.cjs',
-      './node_modules/pdfkit/js/data/*.afm',
+      './node_modules/pdfkit/js/standard-fonts/**/*',
+      './node_modules/pdfkit/js/data/**/*',
+      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/standard-fonts/**/*',
+      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/data/**/*',
     ],
   },
 
