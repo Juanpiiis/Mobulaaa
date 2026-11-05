@@ -73,11 +73,9 @@ export default function CarteraPage() {
     const [verCotizacion, setVerCotizacion] = useState<string | null>(null)
     const [procesando, setProcesando] = useState<string | null>(null)
 
-    // Modal aprobar
     const [modalAprobar, setModalAprobar] = useState<string | null>(null)
     const [observacionAprobar, setObservacionAprobar] = useState('')
 
-    // Modal rechazar
     const [modalRechazar, setModalRechazar] = useState<string | null>(null)
     const [motivoRechazar, setMotivoRechazar] = useState('')
     const [errorRechazar, setErrorRechazar] = useState('')
@@ -110,6 +108,7 @@ export default function CarteraPage() {
             setRolActual(perfil?.rol || null)
         }
 
+        // 🔥 CORRECCIÓN: Traer descuento_manual_porcentaje (pedido) y descuento_porcentaje (detalle)
         const { data } = await supabase
             .from('pedidos')
             .select(`
@@ -124,6 +123,7 @@ export default function CarteraPage() {
           producto_id,
           precio_unitario,
           tipo_precio,
+          descuento_porcentaje,
           productos(id, nombre, precio, precio_mayorista, codigo) 
         )
       `)
@@ -134,12 +134,6 @@ export default function CarteraPage() {
         setLoading(false)
     }
 
-
-
-
-    // ─────────────────────────────────────────────────────
-    // Aprobar pedido
-    // ─────────────────────────────────────────────────────
     const iniciarAprobar = (pedidoId: string) => {
         setObservacionAprobar('')
         setModalAprobar(pedidoId)
@@ -153,22 +147,31 @@ export default function CarteraPage() {
         setProcesando(pedido.id)
 
         try {
-            const subtotal = pedido.detalle_pedido.reduce(
+            // 🔥 CORRECCIÓN: Calcular subtotal restando descuentos por producto
+            const subtotalBruto = pedido.detalle_pedido.reduce(
                 (acc, d: any) => acc + (d.precio_unitario ?? d.productos?.precio ?? 0) * d.cantidad_solicitada,
                 0
             )
-            const porcentaje = calcularDescuento(subtotal)
-            const descuento = subtotal * (porcentaje / 100)
-            const total = subtotal - descuento
+            const descProductos = pedido.detalle_pedido.reduce(
+                (acc, d: any) => {
+                    const cant = d.cantidad_solicitada
+                    const precio = d.precio_unitario ?? d.productos?.precio ?? 0
+                    return acc + (precio * cant * ((d.descuento_porcentaje || 0) / 100))
+                },
+                0
+            )
+            const subtotalConDescProd = subtotalBruto - descProductos
+            const porcentaje = calcularDescuento(subtotalConDescProd)
+            const descuento = subtotalConDescProd * (porcentaje / 100)
+            const total = subtotalConDescProd - descuento
 
             const { generarNumeroCotizacion, generarNumeroFactura } = await import('@/lib/utils/cotizacion')
             const numeroCotizacion = await generarNumeroCotizacion(supabase)
             const numeroFactura = generarNumeroFactura()
 
-            // RPC transaccional que actualiza y descuenta stock
             const { error: errRpc } = await supabase.rpc('aprobar_pedido_cartera', {
                 p_pedido_id: pedido.id,
-                p_subtotal: subtotal,
+                p_subtotal: subtotalBruto,
                 p_descuento_porcentaje: porcentaje,
                 p_descuento_valor: descuento,
                 p_total: total,
@@ -228,9 +231,6 @@ export default function CarteraPage() {
         }
     }
 
-    // ─────────────────────────────────────────────────────
-    // Rechazar pedido
-    // ─────────────────────────────────────────────────────
     const iniciarRechazar = (pedidoId: string) => {
         setMotivoRechazar('')
         setErrorRechazar('')
@@ -281,9 +281,6 @@ export default function CarteraPage() {
         alert('Pedido rechazado con exito')
     }
 
-    // ─────────────────────────────────────────────────────
-    // Separación y Filtros
-    // ─────────────────────────────────────────────────────
     const porAprobar = useMemo(() => {
         const arr = pedidos.filter(p => p.estado === 'pendiente')
         return [...arr].sort((a, b) => {
@@ -302,14 +299,10 @@ export default function CarteraPage() {
     const historialFiltrado = useMemo(() => {
         const q = filtros.busqueda.trim().toLowerCase()
         return pedidos.filter(p => {
-            if (p.estado === 'pendiente') return false // En historial mostramos lo que NO está por aprobar
-
-            // 🔥 Filtro dinámico exacto por estado de la BD
+            if (p.estado === 'pendiente') return false
             if (filtros.estado !== 'todos' && p.estado !== filtros.estado) return false
-
             if (!estaEnRango(p.fecha, filtros.fecha)) return false
             if (filtros.extra !== 'todos' && p.usuarios?.nombre !== filtros.extra) return false
-
             if (q) {
                 const partes = [
                     p.numero_cotizacion, p.numero_factura, p.id, String(p.id).slice(0, 8),
@@ -317,7 +310,6 @@ export default function CarteraPage() {
                 ].filter(Boolean).map(s => String(s).toLowerCase())
                 if (!partes.some(s => s.includes(q))) return false
             }
-
             return true
         })
     }, [pedidos, filtros])
@@ -336,7 +328,6 @@ export default function CarteraPage() {
         if (!tiendaActual) return
         fetchOrders()
 
-        // 🔥 Realtime Cartera (escucha todas las bodegas)
         const channel = supabase
             .channel('cartera-pedidos-live')
             .on(
@@ -351,6 +342,7 @@ export default function CarteraPage() {
 
         return () => { supabase.removeChannel(channel) }
     }, [tiendaActual?.id])
+
     const toggleMes = (key: string) => {
         setMesesAbiertos(prev => ({ ...prev, [key]: !prev[key] }))
     }
@@ -363,9 +355,6 @@ export default function CarteraPage() {
     const pedidoAprobando = pedidos.find(p => p.id === modalAprobar) || null
     const pedidoRechazando = pedidos.find(p => p.id === modalRechazar) || null
 
-    // ─────────────────────────────────────────────────────
-    // Acciones de la tarjeta
-    // ─────────────────────────────────────────────────────
     const renderAcciones = (pedido: Pedido) => {
         if (pedido.estado !== 'pendiente') return undefined
 

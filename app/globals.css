@@ -3,6 +3,7 @@
    ========================================================= */
 
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* ---------------------------------------------------------
    1. DESIGN TOKENS
@@ -949,252 +950,321 @@ button:active:not(:disabled),
   color: var(--mobulaa-primary);
 }
 
+
 /* =========================================================
-   17. MODO OSCURO
+   17. MODO OSCURO (Limpio y Profesional)
    ========================================================= */
 .dark {
-  --color-surface: #1a1a1a;
-  --color-surface-muted: #0f0f0f;
-  --color-gray-50: #1a1a1a;
-  --color-gray-100: #262626;
-  --color-gray-200: #2e2e2e;
-  --color-gray-300: #3d3d3d;
-  --color-gray-400: #6b6b6b;
-  --color-gray-500: #9ca3af;
-  --color-gray-600: #d1d5db;
-  --color-gray-700: #e5e7eb;
-  --color-gray-800: #f3f4f6;
-  --color-gray-900: #f9fafb;
+  color-scheme: dark;
+
+  /* Fondos Principales (Grises sólidos, sin tintes raros) */
+  --color-surface: #1E1E24;
+  --color-surface-muted: #141418;
+  --dark-raised: #282830;
+  --dark-border: #33333D;
+
+  /* Texto de Acento (Un morado más saturado y visible) */
+  --dark-accent: #9F8CFF;
+  --dark-accent-soft: rgba(159, 140, 255, 0.15);
+  --dark-btn: #5B3DE6;
+  --dark-btn-hover: #6E52FF;
+
+  /* Escala de grises estándar para modo oscuro */
+  --color-gray-50: #1A1A20;
+  --color-gray-100: #22222B;
+  --color-gray-200: #2B2B36;
+  --color-gray-300: #3D3D4A;
+  --color-gray-400: #7A7A8C;
+  --color-gray-500: #9A9AAE;
+  --color-gray-600: #B8B8C7;
+  --color-gray-700: #D4D4DF;
+  --color-gray-800: #F0F0F5;
+  --color-gray-900: #FFFFFF;
+
+  /* Sombras oscuras reales */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.7);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.8);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.9);
+
+  /* 🔥 COLORES DE ESTADO SÓLIDOS (Para que no se vean "sucios") */
+  /* Rojos (Errores, Rechazos) */
+  --color-red-50: #2A1414;
+  --color-red-100: #3D1A1A;
+  --color-red-200: #5C2626;
+  --color-red-600: #F87171;
+  --color-red-700: #FCA5A5;
+  --color-red-800: #FECACA;
+
+  /* Verdes (Éxitos, Descuentos) */
+  --color-green-50: #0F2419;
+  --color-green-100: #143322;
+  --color-green-200: #1D4D33;
+  --color-green-600: #34D399;
+  --color-green-700: #6EE7B7;
+  --color-green-800: #A7F3D0;
+
+  --color-emerald-50: #0F2419;
+  --color-emerald-100: #143322;
+  --color-emerald-200: #1D4D33;
+  --color-emerald-600: #34D399;
+  --color-emerald-700: #6EE7B7;
+  --color-emerald-800: #A7F3D0;
+
+  /* Amarillos (Alertas, Pendientes) */
+  --color-yellow-50: #2A200B;
+  --color-yellow-100: #3D2E10;
+  --color-yellow-200: #5C4518;
+  --color-yellow-600: #FBBF24;
+  --color-yellow-700: #FCD34D;
+  --color-yellow-800: #FDE68A;
+
+  --color-amber-50: #2A200B;
+  --color-amber-100: #3D2E10;
+  --color-amber-200: #5C4518;
+  --color-amber-600: #FBBF24;
+  --color-amber-700: #FCD34D;
+  --color-amber-800: #FDE68A;
+
+  /* Azules (Informativos, Cartera) */
+  --color-blue-50: #101C2E;
+  --color-blue-100: #162844;
+  --color-blue-200: #1F3A63;
+  --color-blue-600: #60A5FA;
+  --color-blue-700: #93C5FD;
+  --color-blue-800: #BFDBFE;
+
+  /* Morados/Violetas (Despachados) */
+  --color-violet-50: #1A112B;
+  --color-violet-100: #261A3D;
+  --color-violet-200: #3B285C;
+  --color-violet-600: #A78BFA;
+  --color-violet-700: #C4B5FD;
+  --color-violet-800: #DDD6FE;
+
+  --color-purple-50: #1A112B;
+  --color-purple-100: #261A3D;
+  --color-purple-200: #3B285C;
+  --color-purple-600: #A78BFA;
+  --color-purple-700: #C4B5FD;
+  --color-purple-800: #DDD6FE;
+
+  /* Naranjas (Devueltos) */
+  --color-orange-50: #2E160B;
+  --color-orange-100: #442110;
+  --color-orange-200: #663218;
+  --color-orange-600: #FB923C;
+  --color-orange-700: #FDBA74;
+  --color-orange-800: #FED7AA;
 }
 
+/* ---------- Base ---------- */
 .dark body {
-  background-color: #0f0f0f;
-  color: #f3f4f6;
+  background-color: var(--color-surface-muted);
+  color: var(--color-gray-800);
 }
 
+.dark ::selection {
+  background-color: var(--dark-accent-soft);
+  color: #FFFFFF;
+}
+
+.dark :focus-visible {
+  outline-color: var(--dark-accent);
+}
+
+/* ---------- Fondos y textos principales ---------- */
 .dark .bg-white {
-  background-color: #1a1a1a !important;
+  background-color: var(--color-surface);
 }
 
-.dark .bg-\[\#F7F7FB\] {
-  background-color: #0f0f0f !important;
-}
-
+.dark .bg-\[\#F7F7FB\],
 .dark .bg-\[\#F7F7F9\] {
-  background-color: #0f0f0f !important;
-}
-
-.dark .bg-gray-50,
-.dark .bg-gray-100 {
-  background-color: #1f1f1f !important;
+  background-color: var(--color-surface-muted);
 }
 
 .dark .text-\[\#232323\] {
-  color: #f3f4f6 !important;
-}
-
-.dark .text-gray-900,
-.dark .text-gray-800,
-.dark .text-gray-700 {
-  color: #f3f4f6 !important;
+  color: var(--color-gray-800);
 }
 
 .dark .text-\[\#828282\] {
-  color: #9ca3af !important;
+  color: var(--color-gray-500);
 }
 
-.dark .text-gray-500,
-.dark .text-gray-600 {
-  color: #9ca3af !important;
+/* Textos y fondos morados de marca */
+.dark .text-\[\#1A0087\] {
+  color: var(--dark-accent);
 }
 
-.dark .text-gray-400 {
-  color: #6b7280 !important;
+.dark .hover\:text-\[\#1A0087\]:hover {
+  color: #D4CCFF;
 }
 
-.dark .border-gray-100 {
-  border-color: #2e2e2e !important;
+.dark .bg-\[\#1A0087\]\/5,
+.dark .bg-\[\#1A0087\]\/10 {
+  background-color: var(--dark-accent-soft);
 }
 
-.dark .border-gray-200 {
-  border-color: #3d3d3d !important;
+.dark .border-\[\#1A0087\] {
+  border-color: var(--dark-accent);
 }
 
-.dark .border-gray-300 {
-  border-color: #4d4d4d !important;
+/* ---------- Formularios ---------- */
+.dark :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  background-color: var(--dark-raised);
+  color: var(--color-gray-800);
+  border-color: var(--dark-border);
 }
 
-.dark input,
-.dark textarea,
-.dark select {
-  background-color: #1f1f1f !important;
-  color: #f3f4f6 !important;
-  border-color: #3d3d3d !important;
+.dark :is(input, textarea, select):focus {
+  border-color: var(--dark-accent);
+  box-shadow: 0 0 0 3px var(--dark-accent-soft);
 }
 
 .dark input::placeholder,
 .dark textarea::placeholder {
-  color: #6b7280 !important;
+  color: var(--color-gray-500);
 }
 
-.dark .divide-gray-100>*+*,
-.dark .divide-gray-200>*+* {
-  border-color: #2e2e2e !important;
+.dark input[type="checkbox"],
+.dark input[type="radio"] {
+  accent-color: var(--dark-btn-hover);
 }
 
-.dark .bg-yellow-50,
-.dark .bg-yellow-100 {
-  background-color: rgba(234, 179, 8, 0.12) !important;
+/* Autofill */
+.dark input:-webkit-autofill {
+  -webkit-text-fill-color: var(--color-gray-800);
+  -webkit-box-shadow: 0 0 0 1000px var(--dark-raised) inset;
 }
 
-.dark .text-yellow-600,
-.dark .text-yellow-700,
-.dark .text-yellow-800,
-.dark .text-yellow-900 {
-  color: #fde047 !important;
-}
-
-.dark .border-yellow-200,
-.dark .border-yellow-400 {
-  border-color: rgba(234, 179, 8, 0.4) !important;
-}
-
-.dark .bg-red-50,
-.dark .bg-red-100 {
-  background-color: rgba(239, 68, 68, 0.12) !important;
-}
-
-.dark .text-red-600,
-.dark .text-red-700,
-.dark .text-red-800 {
-  color: #fca5a5 !important;
-}
-
-.dark .border-red-200,
-.dark .border-red-400 {
-  border-color: rgba(239, 68, 68, 0.4) !important;
-}
-
-.dark .bg-green-50,
-.dark .bg-green-100 {
-  background-color: rgba(34, 197, 94, 0.12) !important;
-}
-
-.dark .text-green-600,
-.dark .text-green-700,
-.dark .text-green-800 {
-  color: #86efac !important;
-}
-
-.dark .border-green-200,
-.dark .border-green-400,
-.dark .border-green-500 {
-  border-color: rgba(34, 197, 94, 0.4) !important;
-}
-
-.dark .bg-blue-50,
-.dark .bg-blue-100 {
-  background-color: rgba(59, 130, 246, 0.12) !important;
-}
-
-.dark .text-blue-600,
-.dark .text-blue-700,
-.dark .text-blue-800 {
-  color: #93c5fd !important;
-}
-
-.dark .border-blue-200,
-.dark .border-blue-400 {
-  border-color: rgba(59, 130, 246, 0.4) !important;
-}
-
-.dark .bg-purple-50,
-.dark .bg-purple-100 {
-  background-color: rgba(168, 85, 247, 0.12) !important;
-}
-
-.dark .text-purple-600,
-.dark .text-purple-700,
-.dark .text-purple-800 {
-  color: #d8b4fe !important;
-}
-
-.dark .border-purple-200,
-.dark .border-purple-400 {
-  border-color: rgba(168, 85, 247, 0.4) !important;
-}
-
-.dark .bg-orange-50,
-.dark .bg-orange-100 {
-  background-color: rgba(249, 115, 22, 0.12) !important;
-}
-
-.dark .text-orange-600,
-.dark .text-orange-700,
-.dark .text-orange-800 {
-  color: #fdba74 !important;
-}
-
-.dark .border-orange-200,
-.dark .border-orange-300,
-.dark .border-orange-400 {
-  border-color: rgba(249, 115, 22, 0.4) !important;
-}
-
-.dark .bg-red-50.border-red-200 {
-  background-color: rgba(239, 68, 68, 0.12) !important;
-}
-
-.dark .bg-green-50.border-green-200 {
-  background-color: rgba(34, 197, 94, 0.12) !important;
-}
-
-.dark .bg-yellow-50.border-yellow-200 {
-  background-color: rgba(234, 179, 8, 0.12) !important;
-}
-
-.dark .bg-orange-50.border-orange-200,
-.dark .bg-orange-50\/50 {
-  background-color: rgba(249, 115, 22, 0.12) !important;
-}
-
-.dark h1,
-.dark h2,
-.dark h3,
-.dark h4,
-.dark h5,
-.dark h6 {
-  color: #f3f4f6 !important;
-}
-
-.dark .dashboard-sidebar {
-  background-color: #1A0087;
-}
-
-.dark .dashboard-topbar {
-  background-color: #1a1a1a;
-  border-bottom-color: #2e2e2e;
-}
-
+/* ---------- Login ---------- */
 .dark .login-page-bg {
-  background-color: #0f0f0f;
+  background-color: var(--color-surface-muted);
 }
 
 .dark .login-card {
-  background: #1a1a1a;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  background: var(--color-surface);
+  border: 1px solid var(--dark-border);
+  box-shadow: var(--shadow-2xl);
 }
 
 .dark .input-mobulaa {
-  background-color: #1f1f1f;
-  color: #f3f4f6;
-  border-color: #3d3d3d;
+  background-color: var(--dark-raised);
+  color: var(--color-gray-800);
+  border-color: var(--dark-border);
 }
 
+.dark .btn-mobulaa {
+  background-color: var(--dark-btn);
+  color: #FFFFFF;
+}
+
+.dark .btn-mobulaa:hover {
+  background-color: var(--dark-btn-hover);
+}
+
+/* ---------- Sidebar ---------- */
+.dark .dashboard-sidebar {
+  background-color: #12005A;
+  border-right: 1px solid var(--dark-border);
+}
+
+.dark .sidebar-store-selector__select {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.dark .sidebar-store-selector__select option {
+  background-color: var(--color-surface);
+  color: var(--color-gray-800);
+}
+
+.dark .sidebar-nav-item--active {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+/* ---------- Topbar y Campana ---------- */
+.dark .dashboard-topbar {
+  background-color: var(--color-surface);
+  border-bottom-color: var(--dark-border);
+}
+
+.dark .user-avatar {
+  background-color: var(--dark-btn);
+}
+
+.dark .campana-panel {
+  background-color: var(--dark-raised);
+  border-color: var(--dark-border);
+}
+
+.dark .campana-panel__header {
+  background-color: var(--color-surface);
+  border-bottom-color: var(--dark-border);
+}
+
+.dark .campana-panel__mark-all {
+  color: var(--dark-accent);
+}
+
+.dark .campana-notification {
+  border-bottom-color: var(--dark-border);
+}
+
+.dark .campana-notification--unread {
+  background-color: var(--dark-accent-soft);
+}
+
+.dark .campana-notification:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* ---------- Estados Vacíos y Loaders ---------- */
+.dark .empty-state__card {
+  background-color: var(--color-surface);
+  border-color: var(--dark-border);
+}
+
+.dark .empty-state__icon-wrapper {
+  background-color: var(--dark-accent-soft);
+}
+
+.dark .empty-state__icon {
+  color: var(--dark-accent);
+}
+
+.dark .loading-screen__spinner {
+  border-color: var(--dark-accent);
+  border-top-color: transparent;
+}
+
+/* ---------- Tarjetas y sombras ---------- */
+.dark .bg-white.border,
+.dark .bg-white[class*="border-"] {
+  border-color: var(--dark-border);
+}
+
+.dark table thead {
+  background-color: var(--color-gray-50);
+}
+
+.dark .shadow-sm,
+.dark .shadow-md,
+.dark .shadow-lg {
+  box-shadow: var(--shadow-md);
+}
+
+.dark .sidebar-overlay--visible {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+/* Transiciones */
 body,
 .bg-white,
-.bg-gray-50,
-.bg-gray-100,
-.text-\[\#232323\] {
+.dashboard-topbar,
+.campana-panel,
+.login-card {
   transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
 }

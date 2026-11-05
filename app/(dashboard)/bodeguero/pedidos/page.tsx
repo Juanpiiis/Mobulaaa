@@ -77,6 +77,7 @@ export default function PedidosBodegueroPage() {
       setRolActual(perfil?.rol || null)
     }
 
+    // 🔥 CORRECCIÓN: Traer descuento_porcentaje en detalle_pedido
     const { data } = await supabase
       .from('pedidos')
       .select(`
@@ -91,7 +92,8 @@ export default function PedidosBodegueroPage() {
           cantidad_aprobada,
           precio_unitario,
           tipo_precio,
-          productos ( id, nombre, precio,precio_mayorista, codigo )
+          descuento_porcentaje,
+          productos ( id, nombre, precio, precio_mayorista, codigo )
         )
       `)
       .eq('bodega_id', tiendaActual.id)
@@ -192,7 +194,6 @@ export default function PedidosBodegueroPage() {
     fetchOrders()
   }
 
-  // 🔥 AHORA SOLO ACTUALIZA EL ESTADO, EL STOCK YA SE DESCONTÓ EN CARTERA
   const handleDespachar = async (pedido: Pedido) => {
     if (procesando) return
     setProcesando(pedido.id)
@@ -315,11 +316,8 @@ export default function PedidosBodegueroPage() {
   const pedidosFiltrados = useMemo(() => {
     const q = filtros.busqueda.trim().toLowerCase()
     return pedidos.filter(p => {
-      // 🔥 Filtro dinámico exacto
       if (filtros.estado !== 'todos' && p.estado !== filtros.estado) return false
-
       if (filtros.extra !== 'todos' && p.usuarios?.nombre !== filtros.extra) return false
-
       if (q) {
         const partes = [
           p.numero_cotizacion, p.numero_factura, p.id, String(p.id).slice(0, 8),

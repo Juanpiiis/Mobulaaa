@@ -18,6 +18,9 @@ interface Props {
     producto: ProductoBusqueda
     cantidad: string
     precioUnitario: number
+    // 🔥 PROPS DE DESCUENTO AGREGADAS
+    descuentoPorcentaje: number
+    onDescuentoChange: (index: number, descuento: number) => void
     onCantidadChange: (index: number, cantidad: string) => void
     onPrecioChange: (index: number, precio: number) => void
     onEliminar: (index: number) => void
@@ -29,6 +32,8 @@ export function ProductoSelector({
     producto,
     cantidad,
     precioUnitario,
+    descuentoPorcentaje,
+    onDescuentoChange,
     onCantidadChange,
     onPrecioChange,
     onEliminar,
@@ -49,7 +54,11 @@ export function ProductoSelector({
     }, [precioUnitario])
 
     const precioFinal = precioUnitario || precioBase
-    const subtotal = precioFinal * cantNum
+
+    // 🔥 Cálculo del subtotal con descuento
+    const subtotalBruto = precioFinal * cantNum
+    const valorDescuento = subtotalBruto * ((descuentoPorcentaje || 0) / 100)
+    const subtotalNeto = subtotalBruto - valorDescuento
 
     const setCantidad = (n: number) => {
         if (n < 1) return
@@ -87,6 +96,13 @@ export function ProductoSelector({
         }
     }
 
+    // 🔥 LÍMITE MÁXIMO DEL 20% POR PRODUCTO
+    const handleInputDescuento = (valor: string) => {
+        const limpio = valor.replace(/[^0-9]/g, '')
+        const num = parseInt(limpio) || 0
+        onDescuentoChange(index, Math.min(Math.max(num, 0), 20))
+    }
+
     return (
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="p-4 space-y-4">
@@ -118,25 +134,43 @@ export function ProductoSelector({
 
                 {!congelado && (
                     <>
-                        <div>
-                            <label className="block text-xs font-medium text-[#828282] mb-1.5">Precio unitario</label>
-                            <input
-                                type="text"
-                                inputMode="numeric"
-                                value={precioTexto}
-                                onChange={(e) => handleInputPrecio(e.target.value)}
-                                onFocus={(e) => e.target.select()}
-                                onBlur={handleBlurPrecio}
-                                placeholder={String(precioBase)}
-                                className="w-full h-11 border border-gray-200 rounded-xl px-3 text-base font-semibold text-[#232323] focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
-                                aria-label={`Precio unitario de ${producto.nombre}`}
-                            />
-                            {precioFinal > precioBase && (
-                                <p className="text-[10px] text-green-700 mt-1">
-                                    ↑ Subido {formatCOP(precioFinal - precioBase)} sobre el mínimo
-                                </p>
-                            )}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-medium text-[#828282] mb-1.5">Precio unitario</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={precioTexto}
+                                    onChange={(e) => handleInputPrecio(e.target.value)}
+                                    onFocus={(e) => e.target.select()}
+                                    onBlur={handleBlurPrecio}
+                                    placeholder={String(precioBase)}
+                                    className="w-full h-11 border border-gray-200 rounded-xl px-3 text-base font-semibold text-[#232323] focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
+                                    aria-label={`Precio unitario de ${producto.nombre}`}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[#828282] mb-1.5 flex justify-between">
+                                    <span>Descuento (%)</span>
+                                    <span className="text-[10px] text-gray-400">Máx 20%</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={descuentoPorcentaje || ''}
+                                    onChange={(e) => handleInputDescuento(e.target.value)}
+                                    onFocus={(e) => e.target.select()}
+                                    placeholder="0"
+                                    className="w-full h-11 border border-gray-200 rounded-xl px-3 text-base font-semibold text-[#232323] focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
+                                />
+                            </div>
                         </div>
+
+                        {precioFinal > precioBase && (
+                            <p className="text-[10px] text-green-700">
+                                ↑ Subido {formatCOP(precioFinal - precioBase)} sobre el mínimo
+                            </p>
+                        )}
 
                         <div>
                             <label className="block text-xs font-medium text-[#828282] mb-2">
@@ -165,13 +199,25 @@ export function ProductoSelector({
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                            <span className="text-xs font-medium text-[#828282]">Subtotal</span>
-                            <span className="text-lg font-bold text-[#1A0087]">{formatCOP(subtotal)}</span>
+                        <div className="flex flex-col gap-1 pt-3 border-t border-gray-100">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-medium text-[#828282]">Subtotal Bruto</span>
+                                <span className="text-sm font-semibold text-gray-600 line-through">{formatCOP(subtotalBruto)}</span>
+                            </div>
+                            {valorDescuento > 0 && (
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-medium text-green-600">Descuento ({descuentoPorcentaje}%)</span>
+                                    <span className="text-sm font-semibold text-green-600">- {formatCOP(valorDescuento)}</span>
+                                </div>
+                            )}
+                            <div className="flex items-center justify-between mt-1">
+                                <span className="text-xs font-bold text-[#232323]">Subtotal Neto</span>
+                                <span className="text-lg font-bold text-[#1A0087]">{formatCOP(subtotalNeto)}</span>
+                            </div>
                         </div>
                     </>
                 )}
             </div>
         </div>
     )
-}
+} 

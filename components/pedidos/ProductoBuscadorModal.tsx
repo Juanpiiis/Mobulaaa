@@ -8,7 +8,6 @@ import {
     PlusIcon,
 } from '@heroicons/react/24/outline'
 import {
-    useBuscarProducto,
     esProductoCongelado,
     motivoCongelado,
     type ProductoBusqueda,
@@ -24,20 +23,24 @@ interface Props {
     productosExcluidos?: string[]
 }
 
+// Función auxiliar para sacar la categoría real de un producto
+const getCategoriaReal = (p: any): string => {
+    const cat = p.categoria_excel || p.categoria || ''
+    return cat.trim()
+}
+
 export function ProductoBuscadorModal({
     abierto,
     onClose,
     onSeleccionar,
     productosBase,
-    bodegaId,
     formatCOP,
     productosExcluidos = [],
 }: Props) {
     const [termino, setTermino] = useState('')
     const [categoriaActiva, setCategoriaActiva] = useState<string | null>(null)
 
-    const { resultados, buscando } = useBuscarProducto(termino, bodegaId, productosBase)
-
+    // 1. Resetear al abrir
     useEffect(() => {
         if (abierto) {
             setTermino('')
@@ -45,21 +48,38 @@ export function ProductoBuscadorModal({
         }
     }, [abierto])
 
+    // 2. Extraer categorías basándonos en la función getCategoriaReal
     const categorias = useMemo(() => {
         const set = new Set<string>()
         productosBase.forEach(p => {
-            if (p.categoria && p.categoria.trim()) set.add(p.categoria.trim())
+            const cat = getCategoriaReal(p)
+            if (cat !== '') {
+                set.add(cat)
+            }
         })
         return Array.from(set).sort((a, b) => a.localeCompare(b))
     }, [productosBase])
 
     if (!abierto) return null
 
-    let filtrados = resultados.filter(p => !productosExcluidos.includes(p.id))
+    // 3. Lógica de filtrado (Búsqueda de texto + Categoría)
+    let filtrados = productosBase.filter(p => !productosExcluidos.includes(p.id))
+
+    // Filtrar por categoría
     if (categoriaActiva) {
-        filtrados = filtrados.filter(p => p.categoria === categoriaActiva)
+        filtrados = filtrados.filter(p => getCategoriaReal(p) === categoriaActiva)
     }
 
+    // Filtrar por texto (si el usuario escribió algo)
+    if (termino.trim().length >= 2) {
+        const q = termino.toLowerCase().trim()
+        filtrados = filtrados.filter(p =>
+            p.nombre.toLowerCase().includes(q) ||
+            (p.sku && p.sku.toLowerCase().includes(q))
+        )
+    }
+
+    // Ordenar: congelados al final
     const ordenados = [...filtrados].sort((a, b) => {
         const aCong = esProductoCongelado(a) ? 1 : 0
         const bCong = esProductoCongelado(b) ? 1 : 0
@@ -99,11 +119,6 @@ export function ProductoBuscadorModal({
                             className="w-full pl-10 pr-10 py-3 border border-gray-200 rounded-xl text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#1A0087]/20 focus:border-[#1A0087]"
                             autoFocus
                         />
-                        {buscando && (
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                <div className="w-5 h-5 border-2 border-[#1A0087] border-t-transparent rounded-full animate-spin" />
-                            </div>
-                        )}
                     </div>
                 </div>
 
@@ -137,16 +152,14 @@ export function ProductoBuscadorModal({
                     {ordenados.length === 0 ? (
                         <div className="p-8 text-center">
                             <MagnifyingGlassIcon className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                            <p className="text-sm text-[#828282]">
-                                {buscando ? 'Buscando…' : termino.length > 0 && termino.length < 2 ? 'Escribe al menos 2 letras para buscar' : 'Sin resultados'}
-                            </p>
+                            <p className="text-sm text-[#828282]">Sin resultados</p>
                         </div>
                     ) : (
                         <div className="divide-y divide-gray-100">
                             {ordenados.map(p => {
                                 const congelado = esProductoCongelado(p)
-                                // 🔥 Usamos precio_mayorista si existe, sino el precio normal
                                 const precioFinal = p.precio_mayorista ?? p.precio
+                                const catLabel = getCategoriaReal(p)
 
                                 return (
                                     <button
@@ -163,10 +176,10 @@ export function ProductoBuscadorModal({
                                                 </p>
                                                 <p className="text-xs text-[#828282] mt-1 flex items-center gap-2 flex-wrap">
                                                     {p.sku && <span className="font-mono">{p.sku}</span>}
-                                                    {p.categoria && (
+                                                    {catLabel && (
                                                         <>
                                                             {p.sku && <span>·</span>}
-                                                            <span className="bg-gray-100 px-1.5 py-0.5 rounded text-[10px] font-medium">{p.categoria}</span>
+                                                            <span className="bg-gray-100 px-1.5 py-0.5 rounded text-[10px] font-medium">{catLabel}</span>
                                                         </>
                                                     )}
                                                 </p>

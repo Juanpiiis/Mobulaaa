@@ -7,22 +7,27 @@ export interface PedidoCompacto {
     estado: string
     fecha: string
     total: number
+    subtotal?: number // 🔥 NUEVO
+    descuento_porcentaje?: number | null // 🔥 NUEVO
+    descuento_valor?: number | null // 🔥 NUEVO
     numero_factura: string | null
     numero_cotizacion: string | null
     revertido: boolean
     importante?: boolean
+    descuento_manual_porcentaje?: number | null // 🔥 NUEVO
     usuarios: { nombre: string } | null
     clientes: { nombre: string; cc_nit: string } | null
     detalle_pedido: {
         cantidad_solicitada: number
         cantidad_aprobada?: number | null
         precio_unitario?: number | null
+        descuento_porcentaje?: number | null // 🔥 NUEVO
         tipo_precio?: string | null
         productos?: {
             nombre: string
             codigo?: string | null
             precio?: number | null
-            precio_mayorista?: number | null // 🔥 AGREGADO
+            precio_mayorista?: number | null
         } | null
     }[]
 }
@@ -117,11 +122,31 @@ export function PedidoCardCompacta({
 
     const puedeMarcarImportante = esAdmin && !esRechazado && !esDevuelto && pedido.estado !== 'despachado' && pedido.estado !== 'entregado'
 
-    // 🔥 CORRECCIÓN: Comparamos contra el precio mayorista
+    // 🔥 VALIDACIONES
     const hayPrecioAjustado = pedido.detalle_pedido.some(d => {
         const precioBase = d.productos?.precio_mayorista ?? d.productos?.precio ?? 0
         return d.precio_unitario != null && d.precio_unitario > precioBase
     })
+
+    const hayDescuentoGlobal = (pedido.descuento_manual_porcentaje || 0) > 0 || (pedido.descuento_porcentaje || 0) > 0
+    const hayDescuentoProductos = pedido.detalle_pedido.some(d => (d.descuento_porcentaje || 0) > 0)
+
+    // Cálculos para el mini-resumen de ahorros
+    const subtotalBrutoTotal = pedido.detalle_pedido.reduce((acc, d) => {
+        const cant = d.cantidad_aprobada ?? d.cantidad_solicitada
+        const precio = d.precio_unitario ?? (d.productos?.precio_mayorista ?? d.productos?.precio ?? 0)
+        return acc + (precio * cant)
+    }, 0)
+
+    const ahorroProductos = pedido.detalle_pedido.reduce((acc, d) => {
+        const cant = d.cantidad_aprobada ?? d.cantidad_solicitada
+        const precio = d.precio_unitario ?? (d.productos?.precio_mayorista ?? d.productos?.precio ?? 0)
+        const bruto = precio * cant
+        return acc + (bruto * ((d.descuento_porcentaje || 0) / 100))
+    }, 0)
+
+    // Si hay descuento_porcentaje (asignado por cartera) usamos eso, si no el manual del vendedor
+    const pctGlobal = pedido.descuento_porcentaje || pedido.descuento_manual_porcentaje || 0
 
     return (
         <article
@@ -150,6 +175,18 @@ export function PedidoCardCompacta({
                             {hayPrecioAjustado && (
                                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-bold text-red-800 ring-1 ring-inset ring-red-300">
                                     * Precio ajustado
+                                </span>
+                            )}
+
+                            {/* 🔥 ETIQUETAS DE DESCUENTO */}
+                            {hayDescuentoProductos && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-bold text-green-700 ring-1 ring-inset ring-green-200">
+                                    Desc. en Productos
+                                </span>
+                            )}
+                            {pctGlobal > 0 && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800 ring-1 ring-inset ring-emerald-300">
+                                    Desc. Global {pctGlobal}%
                                 </span>
                             )}
                         </div>
@@ -234,11 +271,15 @@ export function PedidoCardCompacta({
                         <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100">
                             {itemsMostrar.map((d, i) => {
                                 const cantidad = d.cantidad_aprobada ?? d.cantidad_solicitada
-                                // 🔥 CORRECCIÓN: Usamos el precio mayorista como base
                                 const precioBase = d.productos?.precio_mayorista ?? d.productos?.precio ?? 0
                                 const precio = d.precio_unitario ?? precioBase
-                                const subtotalLinea = precio * cantidad
                                 const subido = d.precio_unitario != null && d.precio_unitario > precioBase
+
+                                const desc = d.descuento_porcentaje || 0
+                                const bruto = precio * cantidad
+                                const valorDesc = bruto * (desc / 100)
+                                const neto = bruto - valorDesc
+
                                 return (
                                     <li key={i} className={`flex min-w-0 items-center gap-3 px-3 py-2.5 ${subido ? 'bg-red-50/60' : ''}`}>
                                         <div className="min-w-0 flex-1">
@@ -257,9 +298,16 @@ export function PedidoCardCompacta({
                                                     )}
                                                 </p>
                                             )}
+                                            {desc > 0 && (
+                                                <p className="text-[11px] mt-0.5 text-green-600 font-medium">
+                                                    Desc. producto: {desc}% (-{formatCOP(valorDesc)})
+                                                </p>
+                                            )}
                                         </div>
                                         <span className="shrink-0 rounded-md bg-gray-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-[#232323]">×{cantidad}</span>
-                                        <span className="shrink-0 text-sm font-semibold tabular-nums text-[#232323] min-w-[80px] text-right">{formatCOP(subtotalLinea)}</span>
+                                        <span className={`shrink-0 text-sm font-semibold tabular-nums min-w-[80px] text-right ${desc > 0 ? 'text-green-700' : 'text-[#232323]'}`}>
+                                            {formatCOP(desc > 0 ? neto : bruto)}
+                                        </span>
                                     </li>
                                 )
                             })}
@@ -280,16 +328,40 @@ export function PedidoCardCompacta({
                     )}
                 </section>
 
-                <footer className="flex items-center justify-between gap-3 border-t border-gray-100 pt-4">
-                    <div className="min-w-0">
-                        <p className="text-xs text-[#828282]">Total</p>
-                        <p className="truncate text-lg font-bold tabular-nums text-[#1A0087]">{formatCOP(pedido.total || 0)}</p>
-                    </div>
-                    {acciones && (
-                        <div onClick={e => e.stopPropagation()} className="flex shrink-0 items-center gap-2 flex-wrap justify-end">
-                            {acciones}
+                {/* 🔥 RESUMEN DE AHORROS Y TOTAL */}
+                <footer className="flex flex-col gap-3 border-t border-gray-100 pt-4">
+                    {(ahorroProductos > 0 || pctGlobal > 0) && (
+                        <div className="bg-green-50/50 rounded-lg p-2.5 flex flex-col gap-1 text-xs">
+                            <div className="flex justify-between text-[#828282]">
+                                <span>Subtotal Bruto</span>
+                                <span className="line-through">{formatCOP(subtotalBrutoTotal)}</span>
+                            </div>
+                            {ahorroProductos > 0 && (
+                                <div className="flex justify-between text-green-600 font-medium">
+                                    <span>Ahorro por productos</span>
+                                    <span>- {formatCOP(ahorroProductos)}</span>
+                                </div>
+                            )}
+                            {pctGlobal > 0 && (
+                                <div className="flex justify-between text-green-600 font-medium">
+                                    <span>Descuento global ({pctGlobal}%)</span>
+                                    <span>- {formatCOP(pedido.descuento_valor || 0)}</span>
+                                </div>
+                            )}
                         </div>
                     )}
+
+                    <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="text-xs text-[#828282]">Total Final</p>
+                            <p className="truncate text-lg font-bold tabular-nums text-[#1A0087]">{formatCOP(pedido.total || 0)}</p>
+                        </div>
+                        {acciones && (
+                            <div onClick={e => e.stopPropagation()} className="flex shrink-0 items-center gap-2 flex-wrap justify-end">
+                                {acciones}
+                            </div>
+                        )}
+                    </div>
                 </footer>
             </div>
         </article>

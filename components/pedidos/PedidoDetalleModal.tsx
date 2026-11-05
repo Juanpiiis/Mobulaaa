@@ -38,6 +38,7 @@ interface DetallePedido {
     producto_id: string
     precio_unitario?: number | null
     tipo_precio?: string | null
+    descuento_porcentaje?: number | null
     productos: {
         id: string
         nombre: string
@@ -55,6 +56,7 @@ export interface PedidoCompleto {
     subtotal: number
     descuento_porcentaje: number
     descuento_valor: number
+    descuento_manual_porcentaje?: number | null
     total: number
     numero_factura: string | null
     numero_cotizacion: string | null
@@ -86,6 +88,7 @@ interface ItemEdit {
     precio: number
     precio_unitario: number
     precioTexto: string
+    descuento_porcentaje: number
 }
 
 // ─────────────────────────────────────────────────────
@@ -96,13 +99,6 @@ const formatCOP = (v: number) =>
 
 const formatFecha = (fecha: string) =>
     new Date(fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
-
-const calcularDescuento = (subtotal: number) => {
-    if (subtotal >= 5000000) return 10
-    if (subtotal >= 2000000) return 5
-    if (subtotal >= 1000000) return 3
-    return 0
-}
 
 const PASOS = [
     { key: 'pendiente', label: 'Pedido' },
@@ -234,6 +230,8 @@ export function PedidoDetalleModal({
     const [itemsEdit, setItemsEdit] = useState<ItemEdit[]>([])
     const [buscadorAbierto, setBuscadorAbierto] = useState(false)
     const [errorEdicion, setErrorEdicion] = useState('')
+    // 🔥 NUEVO: Descuento global editable
+    const [descGlobalEdit, setDescGlobalEdit] = useState<number>(0)
 
     const [productosBodega, setProductosBodega] = useState<ProductoBusqueda[]>([])
     const [cargandoProductos, setCargandoProductos] = useState(false)
@@ -271,6 +269,22 @@ export function PedidoDetalleModal({
     const esRechazable = esAdmin && !['rechazado_bodega', 'rechazado_cartera', 'cancelado', 'entregado', 'despachado'].includes(pedido.estado)
     const puedeEditar = esAdmin && !['cancelado'].includes(pedido.estado)
 
+    const prepararItemsEdit = () => {
+        return pedido.detalle_pedido.map(d => {
+            const precioBase = d.productos.precio_mayorista ?? d.productos.precio
+            const precioFinal = d.precio_unitario ?? precioBase
+            return {
+                producto_id: d.producto_id,
+                cantidad: d.cantidad_solicitada,
+                nombre: d.productos.nombre,
+                precio: precioBase,
+                precio_unitario: precioFinal,
+                precioTexto: String(precioFinal),
+                descuento_porcentaje: d.descuento_porcentaje || 0,
+            }
+        })
+    }
+
     useEffect(() => {
         setTab('detalle')
         setMostrarCancelar(false)
@@ -283,19 +297,9 @@ export function PedidoDetalleModal({
         setErrorRetroceso('')
 
         if (abrirEnModoEdicion && puedeEditar) {
-            setItemsEdit(
-                pedido.detalle_pedido.map(d => {
-                    const precioBase = d.precio_unitario ?? d.productos.precio
-                    return {
-                        producto_id: d.producto_id,
-                        cantidad: d.cantidad_solicitada,
-                        nombre: d.productos.nombre,
-                        precio: d.productos.precio,
-                        precio_unitario: precioBase,
-                        precioTexto: String(precioBase),
-                    }
-                })
-            )
+            setItemsEdit(prepararItemsEdit())
+            // 🔥 Inicializar descuento global
+            setDescGlobalEdit(pedido.descuento_manual_porcentaje || 0)
             setModoEdicion(true)
         } else {
             setModoEdicion(false)
@@ -539,19 +543,8 @@ export function PedidoDetalleModal({
     }
 
     const iniciarEdicion = () => {
-        setItemsEdit(
-            pedido.detalle_pedido.map(d => {
-                const precioBase = d.precio_unitario ?? d.productos.precio
-                return {
-                    producto_id: d.producto_id,
-                    cantidad: d.cantidad_solicitada,
-                    nombre: d.productos.nombre,
-                    precio: d.productos.precio,
-                    precio_unitario: precioBase,
-                    precioTexto: String(precioBase),
-                }
-            })
-        )
+        setItemsEdit(prepararItemsEdit())
+        setDescGlobalEdit(pedido.descuento_manual_porcentaje || 0)
         setErrorEdicion('')
         setModoEdicion(true)
         setTab('detalle')
@@ -571,8 +564,13 @@ export function PedidoDetalleModal({
 
         const precioBase = p.precio_mayorista ?? p.precio
         setItemsEdit([...itemsEdit, {
-            producto_id: p.id, cantidad: 1, nombre: p.nombre,
-            precio: precioBase, precio_unitario: precioBase, precioTexto: String(precioBase),
+            producto_id: p.id,
+            cantidad: 1,
+            nombre: p.nombre,
+            precio: precioBase,
+            precio_unitario: precioBase,
+            precioTexto: String(precioBase),
+            descuento_porcentaje: 0,
         }])
         setErrorEdicion('')
     }
@@ -597,20 +595,38 @@ export function PedidoDetalleModal({
         const limpio = valor.replace(/[^0-9]/g, '')
         setItemsEdit(itemsEdit.map(it => {
             if (it.producto_id !== productoId) return it
-            if (limpio === '') return { ...it, precioTexto: '', precio_unitario: 0 }
-            return { ...it, precioTexto: limpio, precio_unitario: parseInt(limpio) }
+            return { ...it, precioTexto: limpio }
         }))
     }
 
     const handleBlurPrecio = (productoId: string) => {
         setItemsEdit(itemsEdit.map(it => {
             if (it.producto_id !== productoId) return it
+
             const num = parseInt(it.precioTexto || '0')
+
             if (!it.precioTexto || isNaN(num) || num < it.precio) {
                 return { ...it, precio_unitario: it.precio, precioTexto: String(it.precio) }
             }
-            return it
+
+            return { ...it, precio_unitario: num }
         }))
+    }
+
+    const cambiarDescuento = (productoId: string, valor: string) => {
+        const limpio = valor.replace(/[^0-9]/g, '')
+        const num = parseInt(limpio) || 0
+        const descuentoLimpio = Math.min(Math.max(num, 0), 20)
+        setItemsEdit(itemsEdit.map(it =>
+            it.producto_id === productoId ? { ...it, descuento_porcentaje: descuentoLimpio } : it
+        ))
+    }
+
+    // 🔥 NUEVO: Cambio del descuento global
+    const cambiarDescGlobal = (valor: string) => {
+        const limpio = valor.replace(/[^0-9]/g, '')
+        const num = parseInt(limpio) || 0
+        setDescGlobalEdit(Math.min(Math.max(num, 0), 100))
     }
 
     const handleBlurCantidad = (productoId: string) => {
@@ -619,17 +635,33 @@ export function PedidoDetalleModal({
         ))
     }
 
+    // 🔥 AHORA INCLUYE EL DESCUENTO GLOBAL
     const resumenEdicion = useMemo(() => {
-        const subtotal = itemsEdit.reduce((acc, it) => {
+        let subtotalBruto = 0
+        let totalDescuentosProductos = 0
+
+        itemsEdit.forEach(it => {
             const cant = typeof it.cantidad === 'number' ? it.cantidad : 0
             const precio = it.precio_unitario ?? it.precio
-            return acc + (precio * cant)
-        }, 0)
-        const porcentaje = calcularDescuento(subtotal)
-        const descuento = Math.round(subtotal * (porcentaje / 100))
-        const total = subtotal - descuento
-        return { subtotal, porcentaje, descuento, total }
-    }, [itemsEdit])
+            const bruto = precio * cant
+            const desc = bruto * ((it.descuento_porcentaje || 0) / 100)
+
+            subtotalBruto += bruto
+            totalDescuentosProductos += desc
+        })
+
+        const subtotalNeto = subtotalBruto - totalDescuentosProductos
+        const valorDescGlobal = subtotalNeto * (descGlobalEdit / 100)
+        const total = subtotalNeto - valorDescGlobal
+
+        return {
+            subtotalBruto,
+            totalDescuentosProductos,
+            subtotalNeto,
+            valorDescGlobal,
+            total
+        }
+    }, [itemsEdit, descGlobalEdit])
 
     const guardarEdicion = async () => {
         if (procesando) return
@@ -654,7 +686,9 @@ export function PedidoDetalleModal({
                 producto_id: it.producto_id,
                 cantidad: typeof it.cantidad === 'number' ? it.cantidad : 0,
                 precio_unitario: it.precio_unitario,
+                descuento_porcentaje: it.descuento_porcentaje,
             })),
+            p_descuento_global_porcentaje: descGlobalEdit, // 🔥 NUEVO PARÁMETRO
         })
         setProcesando(false)
 
@@ -738,27 +772,43 @@ export function PedidoDetalleModal({
                                         {itemsEdit.map(it => {
                                             const cantNum = typeof it.cantidad === 'number' ? it.cantidad : 0
                                             const precioFinal = it.precio_unitario || it.precio
-                                            const subtotalLinea = precioFinal * cantNum
+                                            const subtotalBruto = precioFinal * cantNum
+                                            const subtotalNeto = subtotalBruto * (1 - (it.descuento_porcentaje || 0) / 100)
+
                                             return (
                                                 <div key={it.producto_id} className="p-3 bg-gray-50 rounded-xl space-y-2">
                                                     <div className="flex items-center gap-3">
                                                         <div className="min-w-0 flex-1">
                                                             <p className="text-sm font-medium text-[#232323] truncate">{it.nombre}</p>
-                                                            <p className="text-[11px] text-[#828282] mt-0.5">Mínimo: {formatCOP(it.precio)} · subtotal {formatCOP(subtotalLinea)}</p>
+                                                            <p className="text-[11px] text-[#828282] mt-0.5">Mínimo: {formatCOP(it.precio)} · subtotal {formatCOP(subtotalNeto)}</p>
                                                         </div>
                                                         <button onClick={() => eliminarProducto(it.producto_id)} disabled={procesando} className="w-9 h-9 flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50">
                                                             <TrashIcon className="w-4 h-4" />
                                                         </button>
                                                     </div>
 
-                                                    <div className="grid grid-cols-2 gap-3">
+                                                    <div className="grid grid-cols-3 gap-3">
                                                         <div>
                                                             <label className="block text-[10px] text-[#828282] mb-1">Cantidad</label>
                                                             <input type="text" inputMode="numeric" value={it.cantidad} onChange={e => cambiarCantidad(it.producto_id, e.target.value)} onFocus={e => e.target.select()} onBlur={() => handleBlurCantidad(it.producto_id)} disabled={procesando} className="w-full border border-gray-300 rounded-lg p-2 text-sm text-center font-semibold" />
                                                         </div>
                                                         <div>
                                                             <label className="block text-[10px] text-[#828282] mb-1">Precio unitario</label>
-                                                            <input type="text" inputMode="numeric" value={it.precioTexto} onChange={e => cambiarPrecioTexto(it.producto_id, e.target.value)} onFocus={e => e.target.select()} onBlur={() => handleBlurPrecio(it.producto_id)} placeholder={String(it.precio)} disabled={procesando} className="w-full border border-gray-300 rounded-lg p-2 text-sm text-right font-semibold" />
+                                                            <input
+                                                                type="text"
+                                                                inputMode="numeric"
+                                                                value={it.precioTexto}
+                                                                onChange={e => cambiarPrecioTexto(it.producto_id, e.target.value)}
+                                                                onFocus={e => e.target.select()}
+                                                                onBlur={() => handleBlurPrecio(it.producto_id)}
+                                                                placeholder={String(it.precio)}
+                                                                disabled={procesando}
+                                                                className="w-full border border-gray-300 rounded-lg p-2 text-sm text-right font-semibold"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] text-[#828282] mb-1">Desc. (%)</label>
+                                                            <input type="text" inputMode="numeric" value={it.descuento_porcentaje || ''} onChange={e => cambiarDescuento(it.producto_id, e.target.value)} onFocus={e => e.target.select()} placeholder="0" disabled={procesando} className="w-full border border-gray-300 rounded-lg p-2 text-sm text-center font-semibold" />
                                                         </div>
                                                     </div>
 
@@ -776,6 +826,32 @@ export function PedidoDetalleModal({
                                 </button>
                             </div>
 
+                            {/* 🔥 NUEVO: DESCUENTO GLOBAL EDITABLE */}
+                            <div className="bg-white rounded-2xl border border-[#1A0087]/20 p-5 space-y-2">
+                                <p className="text-xs font-semibold text-[#1A0087] uppercase">Descuento Global del Pedido</p>
+                                <p className="text-[11px] text-[#828282]">
+                                    Si ya se había aplicado un descuento global, lo verás aquí. Puedes modificarlo o ponerlo en 0 para quitarlo.
+                                </p>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={descGlobalEdit || ''}
+                                        onChange={(e) => cambiarDescGlobal(e.target.value)}
+                                        onFocus={e => e.target.select()}
+                                        placeholder="0"
+                                        disabled={procesando}
+                                        className="w-full border border-gray-300 rounded-xl p-3 pr-10 text-base font-semibold text-[#232323] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/30 focus:border-[#1A0087]"
+                                    />
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold">%</span>
+                                </div>
+                                {descGlobalEdit > 0 && (
+                                    <p className="text-[11px] text-green-600 font-medium">
+                                        Se ahorrará {formatCOP(resumenEdicion.valorDescGlobal)} ({descGlobalEdit}% sobre {formatCOP(resumenEdicion.subtotalNeto)})
+                                    </p>
+                                )}
+                            </div>
+
                             {errorEdicion && (
                                 <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
                                     <ExclamationTriangleIcon className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
@@ -783,12 +859,16 @@ export function PedidoDetalleModal({
                                 </div>
                             )}
 
+                            {/* RESUMEN FINAL */}
                             <div className="bg-white rounded-2xl border border-gray-100 p-5">
                                 <p className="text-xs font-semibold text-[#828282] uppercase mb-3">Resumen</p>
                                 <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between text-[#828282]"><span>Subtotal</span><span>{formatCOP(resumenEdicion.subtotal)}</span></div>
-                                    {resumenEdicion.porcentaje > 0 && (
-                                        <div className="flex justify-between text-green-600"><span>Descuento ({resumenEdicion.porcentaje}%)</span><span>- {formatCOP(resumenEdicion.descuento)}</span></div>
+                                    <div className="flex justify-between text-[#828282]"><span>Subtotal Bruto</span><span>{formatCOP(resumenEdicion.subtotalBruto)}</span></div>
+                                    {resumenEdicion.totalDescuentosProductos > 0 && (
+                                        <div className="flex justify-between text-green-600"><span>Descuentos por producto</span><span>- {formatCOP(resumenEdicion.totalDescuentosProductos)}</span></div>
+                                    )}
+                                    {descGlobalEdit > 0 && (
+                                        <div className="flex justify-between text-green-600"><span>Descuento Global ({descGlobalEdit}%)</span><span>- {formatCOP(resumenEdicion.valorDescGlobal)}</span></div>
                                     )}
                                     <div className="flex justify-between items-baseline pt-3 border-t border-gray-100 mt-2">
                                         <span className="font-semibold text-[#232323] text-base">Total</span>
@@ -866,6 +946,9 @@ export function PedidoDetalleModal({
                                         const precioBase = d.productos.precio_mayorista ?? d.productos.precio
                                         const precioUnit = d.precio_unitario ?? precioBase
                                         const subido = d.precio_unitario != null && d.precio_unitario > precioBase
+                                        const desc = d.descuento_porcentaje || 0
+                                        const subtotalBruto = precioUnit * cantidad
+                                        const subtotalNeto = subtotalBruto * (1 - desc / 100)
 
                                         return (
                                             <div key={d.id} className={`py-3 flex items-center justify-between gap-3 ${subido ? 'bg-red-50/50 -mx-2 px-2 rounded-lg' : ''}`}>
@@ -880,11 +963,16 @@ export function PedidoDetalleModal({
                                                             <span className="text-red-600 font-bold">*</span>
                                                         </p>
                                                     )}
+                                                    {desc > 0 && (
+                                                        <p className="text-[11px] mt-0.5 text-green-600 font-medium">
+                                                            Desc. aplicado: {desc}% (-{formatCOP(subtotalBruto - subtotalNeto)})
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <div className="text-right shrink-0">
                                                     <p className="text-sm font-semibold text-[#232323] tabular-nums">×{cantidad}</p>
-                                                    <p className={`text-xs tabular-nums ${subido ? 'text-red-700 font-semibold' : 'text-[#828282]'}`}>
-                                                        {formatCOP(precioUnit)}{subido && <span className="text-red-600 font-bold ml-0.5">*</span>}
+                                                    <p className={`text-xs tabular-nums ${subido ? 'text-red-700 font-semibold' : desc > 0 ? 'text-green-700 font-semibold' : 'text-[#828282]'}`}>
+                                                        {formatCOP(subtotalNeto)}{subido && <span className="text-red-600 font-bold ml-0.5">*</span>}
                                                     </p>
                                                 </div>
                                             </div>
@@ -897,8 +985,27 @@ export function PedidoDetalleModal({
                                 <p className="text-xs font-semibold text-[#828282] uppercase mb-3">Resumen</p>
                                 <div className="space-y-2 text-sm">
                                     <div className="flex justify-between text-[#828282]"><span>Subtotal</span><span>{formatCOP(pedido.subtotal || 0)}</span></div>
+
+                                    {pedido.detalle_pedido.some(d => (d.descuento_porcentaje || 0) > 0) && (
+                                        <div className="flex justify-between text-green-600">
+                                            <span>Descuentos por producto</span>
+                                            <span>
+                                                - {formatCOP(
+                                                    pedido.detalle_pedido.reduce((acc, d) => {
+                                                        const cant = d.cantidad_aprobada ?? d.cantidad_solicitada
+                                                        const precio = d.precio_unitario ?? (d.productos.precio_mayorista ?? d.productos.precio)
+                                                        return acc + (precio * cant * ((d.descuento_porcentaje || 0) / 100))
+                                                    }, 0)
+                                                )}
+                                            </span>
+                                        </div>
+                                    )}
+
                                     {pedido.descuento_porcentaje > 0 && (
-                                        <div className="flex justify-between text-green-600"><span>Descuento ({pedido.descuento_porcentaje}%)</span><span>- {formatCOP(pedido.descuento_valor || 0)}</span></div>
+                                        <div className="flex justify-between text-green-600">
+                                            <span>Descuento Global ({pedido.descuento_porcentaje}%)</span>
+                                            <span>- {formatCOP(pedido.descuento_valor || 0)}</span>
+                                        </div>
                                     )}
                                     <div className="flex justify-between items-baseline pt-3 border-t border-gray-100 mt-2">
                                         <span className="font-semibold text-[#232323] text-base">Total</span>
@@ -960,7 +1067,6 @@ export function PedidoDetalleModal({
                         </div>
                     ) : (
                         <>
-                            {/* BOTONES DE BODEGUERO (SOLO SI ES SU ROL) */}
                             {pedido.estado === 'aprobado_cartera' && esBodeguero && (
                                 <button onClick={handleAceptar} disabled={procesando} className="w-full min-h-[48px] px-4 py-3 bg-green-600 text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
                                     {procesando ? 'Procesando...' : <><CheckIcon className="w-5 h-5" />Aceptar y empezar a alistar</>}
@@ -982,7 +1088,6 @@ export function PedidoDetalleModal({
                                 </button>
                             )}
 
-                            {/* BOTONES EXCLUSIVOS DEL ADMIN (EDITAR, RECHAZAR, CANCELAR, DEVOLVER) */}
                             {esAdmin && !esCancelado && (
                                 <div className="grid grid-cols-2 gap-2">
                                     {puedeEditar && (
@@ -1013,7 +1118,6 @@ export function PedidoDetalleModal({
                     )}
                 </div>
 
-                {/* MODALES SECUNDARIOS: CANCELAR, RECHAZAR, RETROCEDER */}
                 {mostrarCancelar && (
                     <div className="absolute inset-0 bg-black/40 flex items-end sm:items-center justify-center z-10 p-0 sm:p-4">
                         <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">

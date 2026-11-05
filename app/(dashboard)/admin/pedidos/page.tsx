@@ -104,6 +104,7 @@ export default function PedidosAdminPage() {
       setRolActual(perfil?.rol || null)
     }
 
+    // 🔥 CORRECCIÓN: Traer descuento_porcentaje en detalle_pedido
     const { data, error } = await supabase
       .from('pedidos')
       .select(`
@@ -118,6 +119,7 @@ export default function PedidosAdminPage() {
           cantidad_aprobada,
           precio_unitario,
           tipo_precio,
+          descuento_porcentaje,
           productos ( id, nombre, precio,precio_mayorista, codigo )
         )
       `)
@@ -152,9 +154,7 @@ export default function PedidosAdminPage() {
 
     return () => { supabase.removeChannel(channel) }
   }, [tiendaActual?.id])
-  // ─────────────────────────────────────────────
-  // HISTORIAL
-  // ─────────────────────────────────────────────
+
   const registrarHistorial = async (
     pedidoId: string,
     accion: string,
@@ -172,11 +172,6 @@ export default function PedidosAdminPage() {
     })
   }
 
-  // ─────────────────────────────────────────────
-  // ACCIONES
-  // ─────────────────────────────────────────────
-
-  // aprobado_cartera → en_preparacion
   const handleAceptar = async (pedidoId: string) => {
     if (procesando) return
     setProcesando(pedidoId)
@@ -206,7 +201,6 @@ export default function PedidosAdminPage() {
     fetchOrders()
   }
 
-  // en_preparacion → listo_para_despacho
   const handleMarcarListo = async (pedidoId: string) => {
     if (procesando) return
     setProcesando(pedidoId)
@@ -236,13 +230,11 @@ export default function PedidosAdminPage() {
     fetchOrders()
   }
 
-  // listo_para_despacho → despachado (rpc, directo, sin modal)
   const handleDespachar = async (pedido: Pedido) => {
     if (procesando) return
     setProcesando(pedido.id)
     setErrorAccion('')
 
-    // Enviamos todas las cantidades aprobadas (o solicitadas si no hay aprobadas).
     const p_cantidades = pedido.detalle_pedido.map(d => ({
       detalle_id: d.id,
       cantidad: d.cantidad_aprobada ?? d.cantidad_solicitada,
@@ -263,7 +255,6 @@ export default function PedidosAdminPage() {
     fetchOrders()
   }
 
-  // despachado → entregado
   const marcarEntregado = async (pedidoId: string) => {
     if (procesando) return
     setProcesando(pedidoId)
@@ -293,7 +284,6 @@ export default function PedidosAdminPage() {
     fetchOrders()
   }
 
-  // Rechazar (admin)
   const iniciarRechazo = (pedidoId: string) => {
     setMotivoRechazo('')
     setConfirmadoRechazo(false)
@@ -353,7 +343,6 @@ export default function PedidosAdminPage() {
     fetchOrders()
   }
 
-  // Importante
   const toggleImportante = async (pedidoId: string, importante: boolean) => {
     if (procesando) return
     setProcesando(pedidoId)
@@ -380,9 +369,6 @@ export default function PedidosAdminPage() {
     fetchOrders()
   }
 
-  // ─────────────────────────────────────────────
-  // AGRUPACIÓN
-  // ─────────────────────────────────────────────
   const vendedoresUnicos = useMemo(() => {
     const set = new Set<string>()
     pedidos.forEach(p => { if (p.usuarios?.nombre) set.add(p.usuarios.nombre) })
@@ -468,14 +454,10 @@ export default function PedidosAdminPage() {
     setPedidoAbierto(id)
   }
 
-  // ─────────────────────────────────────────────
-  // BOTONES POR ESTADO
-  // ─────────────────────────────────────────────
   const renderAcciones = (pedido: Pedido) => {
     const btns: React.ReactNode[] = []
     const cargando = procesando === pedido.id
 
-    // Editar (todos menos cancelado y entregado)
     if (pedido.estado !== 'cancelado' && pedido.estado !== 'entregado') {
       btns.push(
         <button
@@ -491,7 +473,6 @@ export default function PedidosAdminPage() {
       )
     }
 
-    // Rechazar (solo en estados donde tiene sentido)
     const puedeRechazar = ['aprobado_cartera', 'en_preparacion', 'listo_para_despacho'].includes(pedido.estado)
     if (puedeRechazar) {
       btns.push(

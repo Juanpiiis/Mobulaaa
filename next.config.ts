@@ -1,13 +1,18 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['@react-pdf/renderer'],
+  // 1. Marcar ambos paquetes como externos para que no intenten empaquetarlos mal
+  serverExternalPackages: ['@react-pdf/renderer', 'pdfkit'],
 
-  // 🔥 ESTO ES LO QUE ARREGLA EL ERROR DE HELVETICA.CJS
+  // 2. Incluir explícitamente los archivos de fuentes en AMBAS rutas
   outputFileTracingIncludes: {
     '/api/cotizacion/**': [
+      // Ruta raíz
       './node_modules/pdfkit/js/standard-fonts/*.cjs',
       './node_modules/pdfkit/js/data/*.afm',
+      // 🔥 RUTA ANIDADA (la que causaba el error)
+      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/standard-fonts/*.cjs',
+      './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/data/*.afm',
     ],
   },
 

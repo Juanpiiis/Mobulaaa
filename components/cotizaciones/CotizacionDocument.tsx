@@ -7,223 +7,50 @@ import {
     StyleSheet,
 } from '@react-pdf/renderer'
 
-// ─────────────────────────────────────────
-// ESTILOS DEL PDF
-// ─────────────────────────────────────────
 const styles = StyleSheet.create({
-    page: {
-        paddingTop: 40,
-        paddingBottom: 80,
-        paddingHorizontal: 40,
-        fontSize: 9,
-        fontFamily: 'Helvetica',
-        color: '#232323',
-    },
-    // Marca de agua
-    watermarkContainer: {
-        position: 'absolute',
-        top: 300,
-        left: 0,
-        right: 0,
-        alignItems: 'center',
-        opacity: 0.08,
-        transform: 'rotate(-30deg)',
-    },
-    watermark: {
-        fontSize: 80,
-        fontFamily: 'Helvetica-Bold',
-        color: '#000000',
-        textAlign: 'center',
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        borderBottomWidth: 2,
-        borderBottomColor: '#1A0087',
-        paddingBottom: 12,
-        marginBottom: 20,
-    },
-    brand: {
-        fontSize: 22,
-        fontFamily: 'Helvetica-Bold',
-        color: '#1A0087',
-    },
-    brandSub: {
-        fontSize: 7,
-        color: '#828282',
-        letterSpacing: 3,
-        marginTop: 2,
-    },
-    headerRight: {
-        alignItems: 'flex-end',
-    },
-    docTitle: {
-        fontSize: 16,
-        fontFamily: 'Helvetica-Bold',
-        color: '#232323',
-    },
-    docNumber: {
-        fontSize: 11,
-        fontFamily: 'Courier',
-        color: '#1A0087',
-        marginTop: 3,
-    },
-    docDate: {
-        fontSize: 8,
-        color: '#828282',
-        marginTop: 4,
-    },
-    sectionTitle: {
-        fontSize: 8,
-        fontFamily: 'Helvetica-Bold',
-        color: '#828282',
-        letterSpacing: 1,
-        marginBottom: 6,
-        marginTop: 4,
-    },
-    clienteBox: {
-        backgroundColor: '#F7F7F9',
-        padding: 12,
-        borderRadius: 6,
-        marginBottom: 20,
-    },
-    clienteNombre: {
-        fontSize: 11,
-        fontFamily: 'Helvetica-Bold',
-        color: '#232323',
-        marginBottom: 4,
-    },
-    clienteInfo: {
-        fontSize: 9,
-        color: '#555555',
-        marginBottom: 2,
-    },
-    label: {
-        fontFamily: 'Helvetica-Bold',
-        color: '#828282',
-    },
-    table: {
-        marginBottom: 16,
-    },
-    tableHeader: {
-        flexDirection: 'row',
-        backgroundColor: '#1A0087',
-        padding: 8,
-        borderTopLeftRadius: 4,
-        borderTopRightRadius: 4,
-    },
-    tableHeaderCell: {
-        color: '#FFFFFF',
-        fontSize: 8,
-        fontFamily: 'Helvetica-Bold',
-    },
-    tableRow: {
-        flexDirection: 'row',
-        paddingVertical: 6,
-        paddingHorizontal: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: '#EEEEEE',
-    },
-    tableRowAlt: {
-        backgroundColor: '#FAFAFA',
-    },
+    page: { paddingTop: 40, paddingBottom: 80, paddingHorizontal: 40, fontSize: 9, fontFamily: 'Helvetica', color: '#232323' },
+    watermarkContainer: { position: 'absolute', top: 300, left: 0, right: 0, alignItems: 'center', opacity: 0.08, transform: 'rotate(-30deg)' },
+    watermark: { fontSize: 80, fontFamily: 'Helvetica-Bold', color: '#000000', textAlign: 'center' },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', borderBottomWidth: 2, borderBottomColor: '#1A0087', paddingBottom: 12, marginBottom: 20 },
+    brand: { fontSize: 22, fontFamily: 'Helvetica-Bold', color: '#1A0087' },
+    brandSub: { fontSize: 7, color: '#828282', letterSpacing: 3, marginTop: 2 },
+    headerRight: { alignItems: 'flex-end' },
+    docTitle: { fontSize: 16, fontFamily: 'Helvetica-Bold', color: '#232323' },
+    docNumber: { fontSize: 11, fontFamily: 'Courier', color: '#1A0087', marginTop: 3 },
+    docDate: { fontSize: 8, color: '#828282', marginTop: 4 },
+    sectionTitle: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#828282', letterSpacing: 1, marginBottom: 6, marginTop: 4 },
+    clienteBox: { backgroundColor: '#F7F7F9', padding: 12, borderRadius: 6, marginBottom: 20 },
+    clienteNombre: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#232323', marginBottom: 4 },
+    clienteInfo: { fontSize: 9, color: '#555555', marginBottom: 2 },
+    label: { fontFamily: 'Helvetica-Bold', color: '#828282' },
+    table: { marginBottom: 16 },
+    tableHeader: { flexDirection: 'row', backgroundColor: '#1A0087', padding: 8, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
+    tableHeaderCell: { color: '#FFFFFF', fontSize: 8, fontFamily: 'Helvetica-Bold' },
+    tableRow: { flexDirection: 'row', paddingVertical: 6, paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#EEEEEE' },
+    tableRowAlt: { backgroundColor: '#FAFAFA' },
     colCodigo: { width: '15%' },
     colProducto: { width: '40%' },
     colCantidad: { width: '10%', textAlign: 'center' },
     colPrecio: { width: '17.5%', textAlign: 'right' },
     colTotal: { width: '17.5%', textAlign: 'right' },
-    notaSubido: {
-        fontSize: 7,
-        color: '#B45309',
-        marginTop: 2,
-    },
-    totalsContainer: {
-        flexDirection: 'row',
-        justifyContent: 'flex-end',
-        marginTop: 8,
-        marginBottom: 20,
-    },
-    totalsBox: {
-        width: 220,
-    },
-    totalsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        paddingVertical: 3,
-        fontSize: 9,
-    },
-    totalsLabel: {
-        color: '#828282',
-    },
-    totalsValue: {
-        fontFamily: 'Helvetica-Bold',
-        color: '#232323',
-    },
-    totalsGrand: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        paddingTop: 8,
-        marginTop: 4,
-        borderTopWidth: 2,
-        borderTopColor: '#1A0087',
-    },
-    totalsGrandLabel: {
-        fontSize: 11,
-        fontFamily: 'Helvetica-Bold',
-        color: '#232323',
-    },
-    totalsGrandValue: {
-        fontSize: 14,
-        fontFamily: 'Helvetica-Bold',
-        color: '#1A0087',
-    },
-    descuentoRow: {
-        color: '#10B981',
-    },
-    obsBox: {
-        backgroundColor: '#F7F7F9',
-        padding: 10,
-        borderRadius: 4,
-        marginBottom: 20,
-    },
-    obsText: {
-        fontSize: 9,
-        color: '#232323',
-    },
-    footer: {
-        position: 'absolute',
-        bottom: 40,
-        left: 40,
-        right: 40,
-        borderTopWidth: 1,
-        borderTopColor: '#EEEEEE',
-        paddingTop: 8,
-        textAlign: 'center',
-    },
-    footerText: {
-        fontSize: 7,
-        color: '#828282',
-        marginBottom: 2,
-    },
-    footerBrand: {
-        fontSize: 8,
-        fontFamily: 'Helvetica-Bold',
-        color: '#1A0087',
-        marginTop: 4,
-    },
-    pageNumber: {
-        position: 'absolute',
-        bottom: 20,
-        right: 40,
-        fontSize: 7,
-        color: '#828282',
-    },
+    notaSubido: { fontSize: 7, color: '#B45309', marginTop: 2 },
+    totalsContainer: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8, marginBottom: 20 },
+    totalsBox: { width: 220 },
+    totalsRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3, fontSize: 9 },
+    totalsLabel: { color: '#828282' },
+    totalsValue: { fontFamily: 'Helvetica-Bold', color: '#232323' },
+    totalsGrand: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 8, marginTop: 4, borderTopWidth: 2, borderTopColor: '#1A0087' },
+    totalsGrandLabel: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: '#232323' },
+    totalsGrandValue: { fontSize: 14, fontFamily: 'Helvetica-Bold', color: '#1A0087' },
+    descuentoRow: { color: '#10B981' },
+    obsBox: { backgroundColor: '#F7F7F9', padding: 10, borderRadius: 4, marginBottom: 20 },
+    obsText: { fontSize: 9, color: '#232323' },
+    footer: { position: 'absolute', bottom: 40, left: 40, right: 40, borderTopWidth: 1, borderTopColor: '#EEEEEE', paddingTop: 8, textAlign: 'center' },
+    footerText: { fontSize: 7, color: '#828282', marginBottom: 2 },
+    footerBrand: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#1A0087', marginTop: 4 },
+    pageNumber: { position: 'absolute', bottom: 20, right: 40, fontSize: 7, color: '#828282' },
 })
 
-// ─────────────────────────────────────────
-// TIPOS
-// ─────────────────────────────────────────
 export interface CotizacionData {
     numeroCotizacion: string
     fecha: string
@@ -244,6 +71,8 @@ export interface CotizacionData {
         total: number
         subido?: boolean
         precioBase?: number
+        descuentoPorcentaje?: number // 🔥 NUEVO
+        valorDescuento?: number // 🔥 NUEVO
     }[]
     subtotal: number
     descuentoPorcentaje: number
@@ -253,34 +82,23 @@ export interface CotizacionData {
     fechaVencimiento: string
 }
 
-// ─────────────────────────────────────────
-// FORMATO DE MONEDA
-// ─────────────────────────────────────────
 function formatCOP(v: number): string {
-    return new Intl.NumberFormat('es-CO', {
-        style: 'currency',
-        currency: 'COP',
-        minimumFractionDigits: 0,
-    }).format(v)
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(v)
 }
 
-// ─────────────────────────────────────────
-// COMPONENTE PDF
-// ─────────────────────────────────────────
 export function CotizacionDocument({ data }: { data: CotizacionData }) {
     const haySubidos = data.items.some(i => i.subido)
+    const hayDescuentos = data.items.some(i => (i.descuentoPorcentaje || 0) > 0)
 
     return (
         <Document>
             <Page size="A4" style={styles.page} wrap>
-                {/* Marca de agua */}
                 {data.marcaAgua && (
                     <View style={styles.watermarkContainer} fixed>
                         <Text style={styles.watermark}>{data.marcaAgua}</Text>
                     </View>
                 )}
 
-                {/* Encabezado — fijo en cada página */}
                 <View style={styles.header} fixed>
                     <View>
                         <Text style={styles.brand}>MOBULAA</Text>
@@ -293,94 +111,53 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                     </View>
                 </View>
 
-                {/* Datos del cliente — solo primera página */}
                 <Text style={styles.sectionTitle}>DATOS DEL CLIENTE</Text>
                 <View style={styles.clienteBox}>
-                    <Text style={styles.clienteNombre}>
-                        {data.cliente?.nombre || 'Sin cliente'}
-                    </Text>
-                    {data.cliente?.cc_nit && (
-                        <Text style={styles.clienteInfo}>
-                            <Text style={styles.label}>CC/NIT: </Text>
-                            {data.cliente.cc_nit}
-                        </Text>
-                    )}
-                    {data.cliente?.telefono && (
-                        <Text style={styles.clienteInfo}>
-                            <Text style={styles.label}>Teléfono: </Text>
-                            {data.cliente.telefono}
-                        </Text>
-                    )}
-                    {data.cliente?.email && (
-                        <Text style={styles.clienteInfo}>
-                            <Text style={styles.label}>Email: </Text>
-                            {data.cliente.email}
-                        </Text>
-                    )}
-                    {data.cliente?.direccion && (
-                        <Text style={styles.clienteInfo}>
-                            <Text style={styles.label}>Dirección: </Text>
-                            {data.cliente.direccion}
-                        </Text>
-                    )}
+                    <Text style={styles.clienteNombre}>{data.cliente?.nombre || 'Sin cliente'}</Text>
+                    {data.cliente?.cc_nit && <Text style={styles.clienteInfo}><Text style={styles.label}>CC/NIT: </Text>{data.cliente.cc_nit}</Text>}
+                    {data.cliente?.telefono && <Text style={styles.clienteInfo}><Text style={styles.label}>Teléfono: </Text>{data.cliente.telefono}</Text>}
+                    {data.cliente?.email && <Text style={styles.clienteInfo}><Text style={styles.label}>Email: </Text>{data.cliente.email}</Text>}
+                    {data.cliente?.direccion && <Text style={styles.clienteInfo}><Text style={styles.label}>Dirección: </Text>{data.cliente.direccion}</Text>}
                 </View>
 
-                {/* Tabla de productos */}
                 <View style={styles.table}>
                     <View style={styles.tableHeader} fixed>
-                        <Text style={[styles.tableHeaderCell, styles.colCodigo]}>
-                            CÓDIGO
-                        </Text>
-                        <Text style={[styles.tableHeaderCell, styles.colProducto]}>
-                            PRODUCTO
-                        </Text>
-                        <Text style={[styles.tableHeaderCell, styles.colCantidad]}>
-                            CANT.
-                        </Text>
-                        <Text style={[styles.tableHeaderCell, styles.colPrecio]}>
-                            PRECIO
-                        </Text>
-                        <Text style={[styles.tableHeaderCell, styles.colTotal]}>
-                            TOTAL
-                        </Text>
+                        <Text style={[styles.tableHeaderCell, styles.colCodigo]}>CÓDIGO</Text>
+                        <Text style={[styles.tableHeaderCell, styles.colProducto]}>PRODUCTO</Text>
+                        <Text style={[styles.tableHeaderCell, styles.colCantidad]}>CANT.</Text>
+                        <Text style={[styles.tableHeaderCell, styles.colPrecio]}>PRECIO</Text>
+                        <Text style={[styles.tableHeaderCell, styles.colTotal]}>TOTAL</Text>
                     </View>
 
                     {data.items.map((item, i) => (
-                        <View
-                            key={i}
-                            style={[styles.tableRow, i % 2 === 1 ? styles.tableRowAlt : {}]}
-                            wrap={false}
-                        >
-                            <Text style={[styles.colCodigo, { fontSize: 8, color: '#828282' }]}>
-                                {item.codigo || '—'}
-                            </Text>
-                            <Text style={[styles.colProducto, { fontSize: 9 }]}>
-                                {item.nombre}
-                            </Text>
-                            <Text style={[styles.colCantidad, { fontSize: 9 }]}>
-                                {item.cantidad}
-                            </Text>
+                        <View key={i} style={[styles.tableRow, i % 2 === 1 ? styles.tableRowAlt : {}]} wrap={false}>
+                            <Text style={[styles.colCodigo, { fontSize: 8, color: '#828282' }]}>{item.codigo || '—'}</Text>
+
+                            <View style={styles.colProducto}>
+                                <Text style={{ fontSize: 9 }}>{item.nombre}</Text>
+                                {(item.descuentoPorcentaje || 0) > 0 && (
+                                    <Text style={{ fontSize: 7, color: '#10B981', marginTop: 2 }}>
+                                        Descuento: {item.descuentoPorcentaje}% (-{formatCOP(item.valorDescuento || 0)})
+                                    </Text>
+                                )}
+                            </View>
+
+                            <Text style={[styles.colCantidad, { fontSize: 9 }]}>{item.cantidad}</Text>
+
                             <View style={styles.colPrecio}>
                                 <Text style={{ fontSize: 9, color: '#555', textAlign: 'right' }}>
                                     {formatCOP(item.precio)}
-                                    {item.subido && (
-                                        <Text style={{ color: '#B45309', fontFamily: 'Helvetica-Bold' }}> *</Text>
-                                    )}
+                                    {item.subido && <Text style={{ color: '#B45309', fontFamily: 'Helvetica-Bold' }}> *</Text>}
                                 </Text>
                             </View>
-                            <Text
-                                style={[
-                                    styles.colTotal,
-                                    { fontSize: 9, fontFamily: 'Helvetica-Bold' },
-                                ]}
-                            >
+
+                            <Text style={[styles.colTotal, { fontSize: 9, fontFamily: 'Helvetica-Bold', color: (item.descuentoPorcentaje || 0) > 0 ? '#10B981' : '#232323' }]}>
                                 {formatCOP(item.total)}
                             </Text>
                         </View>
                     ))}
                 </View>
 
-                {/* Totales */}
                 <View style={styles.totalsContainer} wrap={false}>
                     <View style={styles.totalsBox}>
                         <View style={styles.totalsRow}>
@@ -389,31 +166,21 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                         </View>
                         {data.descuentoPorcentaje > 0 && (
                             <View style={styles.totalsRow}>
-                                <Text style={[styles.totalsLabel, styles.descuentoRow]}>
-                                    Descuento ({data.descuentoPorcentaje}%)
-                                </Text>
-                                <Text style={[styles.totalsValue, styles.descuentoRow]}>
-                                    - {formatCOP(data.descuentoValor)}
-                                </Text>
+                                <Text style={[styles.totalsLabel, styles.descuentoRow]}>Descuento Global ({data.descuentoPorcentaje}%)</Text>
+                                <Text style={[styles.totalsValue, styles.descuentoRow]}>- {formatCOP(data.descuentoValor)}</Text>
                             </View>
                         )}
                         <View style={styles.totalsGrand}>
                             <Text style={styles.totalsGrandLabel}>Total</Text>
-                            <Text style={styles.totalsGrandValue}>
-                                {formatCOP(data.total)}
-                            </Text>
+                            <Text style={styles.totalsGrandValue}>{formatCOP(data.total)}</Text>
                         </View>
                     </View>
                 </View>
 
-                {/* Nota sobre precios ajustados */}
                 {haySubidos && (
-                    <Text style={styles.notaSubido}>
-
-                    </Text>
+                    <Text style={styles.notaSubido}>* Precio ajustado por encima del precio base.</Text>
                 )}
 
-                {/* Observaciones */}
                 {data.observacion && (
                     <View wrap={false}>
                         <Text style={styles.sectionTitle}>OBSERVACIONES</Text>
@@ -423,25 +190,13 @@ export function CotizacionDocument({ data }: { data: CotizacionData }) {
                     </View>
                 )}
 
-                {/* Footer fijo en cada página */}
                 <View style={styles.footer} fixed>
                     <Text style={styles.footerText}>Cotización válida por 15 días</Text>
-                    <Text style={styles.footerText}>
-                        Vence el {data.fechaVencimiento}
-                    </Text>
-                    <Text style={styles.footerBrand}>
-                        MOBULAA - Tecnología de alta calidad
-                    </Text>
+                    <Text style={styles.footerText}>Vence el {data.fechaVencimiento}</Text>
+                    <Text style={styles.footerBrand}>MOBULAA - Tecnología de alta calidad</Text>
                 </View>
 
-                {/* Número de página */}
-                <Text
-                    style={styles.pageNumber}
-                    render={({ pageNumber, totalPages }) =>
-                        totalPages > 1 ? `Página ${pageNumber} de ${totalPages}` : ''
-                    }
-                    fixed
-                />
+                <Text style={styles.pageNumber} render={({ pageNumber, totalPages }) => totalPages > 1 ? `Página ${pageNumber} de ${totalPages}` : ''} fixed />
             </Page>
         </Document>
     )

@@ -2,7 +2,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTienda } from '@/lib/context/TiendaContext'
-import { calcularDescuento, DESCUENTOS } from '@/types/index'
 import { ClienteSelector } from '@/components/pedidos/ClienteSelector'
 import { HistorialClienteModal } from '@/components/pedidos/HistorialClienteModal'
 import { ProductoSelector } from '@/components/pedidos/ProductoSelector'
@@ -53,6 +52,7 @@ interface Pedido {
     cantidad_aprobada: number | null
     precio_unitario?: number | null
     tipo_precio?: string | null
+    descuento_porcentaje?: number | null
     productos: { id?: string; nombre: string; precio: number; codigo: string | null }
   }[]
 }
@@ -61,6 +61,7 @@ interface ItemPedido {
   producto_id: string
   cantidad: string
   precio_unitario?: number
+  descuento_porcentaje?: number
 }
 
 const MESES = [
@@ -123,6 +124,10 @@ export default function MisPedidosPage() {
   const [filtros, setFiltros] = useState<FiltrosValores>(FILTROS_INICIALES)
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false)
 
+  // 🔥 ESTADOS PARA EL DESCUENTO GLOBAL (MANUAL)
+  const [aplicarDescuentoGlobal, setAplicarDescuentoGlobal] = useState(false)
+  const [descuentoGlobalPorcentaje, setDescuentoGlobalPorcentaje] = useState(0)
+
   const { tiendaActual } = useTienda()
   const supabase = createClient()
 
@@ -133,9 +138,6 @@ export default function MisPedidosPage() {
       minimumFractionDigits: 0,
     }).format(value)
 
-  // ─────────────────────────────────────────────
-  // Cargar pedidos + productos
-  // ─────────────────────────────────────────────
   const fetchOrders = async () => {
     if (!tiendaActual) return
     setIsLoading(true)
@@ -150,26 +152,28 @@ export default function MisPedidosPage() {
         bodegas ( id, nombre ),
         clientes ( nombre, cc_nit ),
         usuarios ( nombre ),
-             detalle_pedido(
+        detalle_pedido(
           id,
           producto_id,
           cantidad_solicitada,
           cantidad_aprobada,
           precio_unitario,
           tipo_precio,
-          productos ( id, nombre, precio,precio_mayorista, codigo )
+          descuento_porcentaje,
+          productos ( id, nombre, precio, precio_mayorista, codigo )
         )
       `)
       .eq('vendedor_id', user?.id)
       .eq('bodega_id', tiendaActual.id)
       .order('fecha', { ascending: false })
 
+    // 🔥 CORRECCIÓN: Traer categoria_excel en la consulta de inventario
     const { data: prod } = await supabase
       .from('inventario')
       .select(`
         cantidad_disponible,
         productos!inner(
-          id, nombre, precio, precio_mayorista, categoria, sku,
+          id, nombre, precio, precio_mayorista, categoria, categoria_excel, sku,
           congelado_manual, limite_congelado
         )
       `)
@@ -183,8 +187,9 @@ export default function MisPedidosPage() {
           id: i.productos?.id,
           nombre: i.productos?.nombre,
           precio: i.productos?.precio,
-          precio_mayorista: i.productos?.precio_mayorista, // 🔥 Agregado
+          precio_mayorista: i.productos?.precio_mayorista,
           categoria: i.productos?.categoria,
+          categoria_excel: i.productos?.categoria_excel, // 🔥 Se mapea para el buscador
           sku: i.productos?.sku,
           stock_disponible: i.cantidad_disponible || 0,
           congelado_manual: i.productos?.congelado_manual ?? false,
@@ -201,26 +206,32 @@ export default function MisPedidosPage() {
   }, [tiendaActual])
 
   // ─────────────────────────────────────────────
-  // Preview del pedido (usa precio_unitario)
+  // Preview del pedido (100% MANUAL)
   // ─────────────────────────────────────────────
   const preview = useMemo(() => {
     const subtotal = items.reduce((acc, item) => {
       const prod = productos.find((p) => p.id === item.producto_id)
       if (!prod || !item.cantidad) return acc
-      const precio = item.precio_unitario ?? (prod.precio_mayorista ?? prod.precio)
-      return acc + precio * parseInt(item.cantidad)
-    }, 0)
-    const porcentaje = calcularDescuento(subtotal)
-    const descuento = subtotal * (porcentaje / 100)
-    const total = subtotal - descuento
-    const siguienteDescuento = DESCUENTOS.slice().reverse().find((d) => subtotal < d.minimo)
-    const faltaPara = siguienteDescuento ? siguienteDescuento.minimo - subtotal : 0
-    return { subtotal, porcentaje, descuento, total, faltaPara, siguienteDescuento }
-  }, [items, productos])
 
-  // ─────────────────────────────────────────────
-  // Congelados
-  // ─────────────────────────────────────────────
+      const precioBase = item.precio_unitario ?? (prod.precio_mayorista ?? prod.precio)
+      const cantidad = parseInt(item.cantidad)
+      const descuentoProducto = item.descuento_porcentaje || 0
+
+      const subtotalLinea = precioBase * cantidad * (1 - descuentoProducto / 100)
+      return acc + subtotalLinea
+    }, 0)
+
+    let porcentajeGlobal = 0
+    if (aplicarDescuentoGlobal) {
+      porcentajeGlobal = descuentoGlobalPorcentaje
+    }
+
+    const descuentoGlobal = subtotal * (porcentajeGlobal / 100)
+    const total = subtotal - descuentoGlobal
+
+    return { subtotal, porcentaje: porcentajeGlobal, descuento: descuentoGlobal, total }
+  }, [items, productos, aplicarDescuentoGlobal, descuentoGlobalPorcentaje])
+
   const hayProductoCongelado = useMemo(() => {
     return items.some((it) => {
       if (!it.producto_id) return false
@@ -242,8 +253,6 @@ export default function MisPedidosPage() {
       if (cant > prod.stock_disponible) {
         return `"${prod.nombre}" solo tiene ${prod.stock_disponible} unidades disponibles`
       }
-
-      // 🔥 Validar contra el precio mayorista (o el normal si no hay)
       const precioBase = prod.precio_mayorista ?? prod.precio
       const precio = item.precio_unitario ?? precioBase
       if (precio < precioBase) {
@@ -253,9 +262,6 @@ export default function MisPedidosPage() {
     return null
   }
 
-  // ─────────────────────────────────────────────
-  // Guardar pedido
-  // ─────────────────────────────────────────────
   const handleSave = async () => {
     if (!tiendaActual || !clienteSeleccionado) return
     const err = validarStock()
@@ -273,6 +279,7 @@ export default function MisPedidosPage() {
 
     try {
       const { data: { user } } = await supabase.auth.getUser()
+
       const { data: pedido, error: errPedido } = await supabase
         .from('pedidos')
         .insert({
@@ -286,6 +293,7 @@ export default function MisPedidosPage() {
           descuento_porcentaje: preview.porcentaje,
           descuento_valor: preview.descuento,
           total: preview.total,
+          descuento_manual_porcentaje: aplicarDescuentoGlobal ? descuentoGlobalPorcentaje : 0,
         })
         .select()
         .single()
@@ -296,7 +304,6 @@ export default function MisPedidosPage() {
         return
       }
 
-      // En handleSave, busca esta parte y reemplázala:
       const { error: errDetalle } = await supabase.from('detalle_pedido').insert(
         itemsValidos.map((item) => {
           const prod = productos.find(p => p.id === item.producto_id)
@@ -307,8 +314,9 @@ export default function MisPedidosPage() {
             pedido_id: pedido.id,
             producto_id: item.producto_id,
             cantidad_solicitada: parseInt(item.cantidad),
-            precio_unitario: precioFinal, // 🔥 Se guarda el precio que puso el vendedor
+            precio_unitario: precioFinal,
             tipo_precio: 'mayorista',
+            descuento_porcentaje: item.descuento_porcentaje || 0,
           }
         })
       )
@@ -334,12 +342,18 @@ export default function MisPedidosPage() {
     setPaso('cliente')
     setErrorStock(null)
     setProductoBuscadorAbierto(false)
+    setAplicarDescuentoGlobal(false)
+    setDescuentoGlobalPorcentaje(0)
   }
 
   const handleAgregarProducto = (p: ProductoBusqueda & { precio_mayorista?: number }) => {
-    // 🔥 Al agregar, usar el precio mayorista por defecto
     const precioInicial = p.precio_mayorista ?? p.precio
-    setItems([...items, { producto_id: p.id, cantidad: '1', precio_unitario: precioInicial }])
+    setItems([...items, {
+      producto_id: p.id,
+      cantidad: '1',
+      precio_unitario: precioInicial,
+      descuento_porcentaje: 0
+    }])
     setErrorStock(null)
   }
 
@@ -353,13 +367,17 @@ export default function MisPedidosPage() {
     setErrorStock(null)
   }
 
+  const handleDescuentoChange = (index: number, descuento: number) => {
+    const descuentoLimpio = Math.min(Math.max(descuento, 0), 20) // 🔥 LÍMITE 20%
+    setItems(items.map((it, idx) =>
+      idx === index ? { ...it, descuento_porcentaje: descuentoLimpio } : it
+    ))
+  }
+
   const handleEliminarItem = (index: number) => {
     setItems(items.filter((_, idx) => idx !== index))
   }
 
-  // ─────────────────────────────────────────────
-  // Separación: En proceso vs Historial
-  // ─────────────────────────────────────────────
   const enProceso = useMemo(() => {
     const arr = pedidos.filter(p =>
       ['pendiente', 'aprobado_bodega', 'aprobado_cartera', 'devuelto_por_cartera'].includes(p.estado)
@@ -732,6 +750,8 @@ export default function MisPedidosPage() {
                                 precioUnitario={item.precio_unitario ?? (prod.precio_mayorista ?? prod.precio)}
                                 onCantidadChange={handleCantidadChange}
                                 onPrecioChange={handlePrecioChange}
+                                onDescuentoChange={handleDescuentoChange}
+                                descuentoPorcentaje={item.descuento_porcentaje || 0}
                                 onEliminar={handleEliminarItem}
                                 formatCOP={formatCOP}
                               />
@@ -762,6 +782,35 @@ export default function MisPedidosPage() {
                       />
                     </div>
 
+                    {/* 🔥 BLOQUE DE DESCUENTO GLOBAL (MANUAL) */}
+                    <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={aplicarDescuentoGlobal}
+                          onChange={(e) => setAplicarDescuentoGlobal(e.target.checked)}
+                          className="w-4 h-4 rounded border-gray-300 text-[#1A0087] focus:ring-[#1A0087]"
+                        />
+                        <span className="text-sm font-medium text-[#232323]">Aplicar descuento global a la factura</span>
+                      </label>
+                      {aplicarDescuentoGlobal && (
+                        <div className="flex flex-wrap gap-2">
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={descuentoGlobalPorcentaje || ''}
+                              onChange={(e) => setDescuentoGlobalPorcentaje(Math.min(Math.max(parseInt(e.target.value) || 0, 0), 100))}
+                              className="w-32 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:border-[#1A0087] focus:outline-none focus:ring-2 focus:ring-[#1A0087]/10"
+                              placeholder="Porcentaje (ej. 5)"
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-xs">%</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     {errorStock && (
                       <div className="bg-red-50 border border-red-200 rounded-xl p-3">
                         <p className="text-sm text-red-700 font-medium">⚠️ {errorStock}</p>
@@ -783,7 +832,7 @@ export default function MisPedidosPage() {
                             {formatCOP(preview.subtotal)}
                           </span>
                         </div>
-                        {preview.porcentaje > 0 ? (
+                        {preview.porcentaje > 0 && (
                           <div className="flex justify-between text-sm text-green-600">
                             <span className="font-medium">
                               Descuento ({preview.porcentaje}%)
@@ -792,12 +841,7 @@ export default function MisPedidosPage() {
                               - {formatCOP(preview.descuento)}
                             </span>
                           </div>
-                        ) : preview.faltaPara > 0 ? (
-                          <p className="text-xs text-yellow-700 bg-yellow-50 border border-yellow-200 p-2 rounded-lg">
-                            ⚡ Agrega {formatCOP(preview.faltaPara)} más para{' '}
-                            {preview.siguienteDescuento?.porcentaje}% de descuento
-                          </p>
-                        ) : null}
+                        )}
                         <div className="flex justify-between items-baseline pt-2 border-t border-[#1A0087]/20">
                           <span className="font-semibold text-[#232323]">Total</span>
                           <span className="text-xl font-bold text-[#1A0087]">

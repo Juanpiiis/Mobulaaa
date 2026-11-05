@@ -664,3 +664,64 @@ Los productos catalogados como congelados no pueden ser añadidos a nuevos pedid
    - Las pantallas de administración y estadísticas soportan y agrupan además el tipo `'ajuste'`.
 6. **Fallback de Redirección Inexistente**:
    - En [`app/(auth)/login/page.tsx`](file:///c:/Users/juaan/OneDrive/Escritorio/Mobulaa%20proyecto/Mobulaaa/app/(auth)/login/page.tsx) y [`app/(auth)/cambiar-password/page.tsx`](file:///c:/Users/juaan/OneDrive/Escritorio/Mobulaa%20proyecto/Mobulaaa/app/(auth)/cambiar-password/page.tsx), la función `redirectUser` mantiene un fallback hacia `/dashboard` en caso de rol desconocido, ruta que no existe como página independiente (es un route group).
+
+## 9. Diagramas del Proyecto
+
+### 9.1. Estructura de Carpetas (Mermaid)
+```mermaid
+flowchart TD
+    src[Root] --> app[app/]
+    src --> components[components/]
+    src --> lib[lib/]
+    src --> supabase[supabase/]
+    src --> types[types/]
+    app --> auth[(auth)]
+    app --> dashboard[(dashboard)]
+    dashboard --> admin[admin/]
+    dashboard --> bodeguero[bodeguero/]
+    dashboard --> cartera[cartera/]
+    dashboard --> vendedor[vendedor/]
+    lib --> context[context/]
+    lib --> google[google/]
+    lib --> hooks[hooks/]
+    lib --> supabase[supabase/]
+    lib --> utils[utils/]
+```
+
+### 9.2. Flujo de Roles y Acceso (Mermaid)
+```mermaid
+graph LR
+    Public[Usuario Público] --> Login[/login]
+    Login -->|Credenciales válidas| Dashboard{Dashboard}
+    Dashboard -->|Rol: admin| AdminPanel[admin/*]
+    Dashboard -->|Rol: bodeguero| BodegaPanel[bodeguero/*]
+    Dashboard -->|Rol: cartera| CarteraPanel[cartera/*]
+    Dashboard -->|Rol: vendedor| VendedorPanel[vendedor/*]
+    AdminPanel -->|Gestión| CRUD[CRUD Operaciones]
+    BodegaPanel -->|Operación| PedidosBodega[Gestión Pedidos]
+    CarteraPanel -->|Finanzas| Facturación[Facturación]
+    VendedorPanel -->|Ventas| Catalogo[Catálogo & Pedidos]
+```
+
+### 9.3. Estado de Pedido (ya existente) – actualizado
+```mermaid
+stateDiagram-v2
+    [*] --> pendiente : Vendedor crea pedido
+    pendiente --> aprobado_cartera : Cartera aprueba
+    pendiente --> rechazado_cartera : Cartera rechaza
+    pendiente --> devuelto_por_cartera : Cartera devuelve
+    aprobado_cartera --> en_preparacion : Bodega inicia alistamiento
+    en_preparacion --> listo_para_despacho : Bodega completa alistamiento
+    listo_para_despacho --> despachado : Bodega despacha
+    despachado --> entregado : Confirmación entrega
+    despachado --> aprobado_cartera : Admin revierte
+    pendiente --> cancelado : Admin cancela
+    aprobado_cartera --> cancelado : Admin cancela
+    en_preparacion --> cancelado : Admin cancela
+    listo_para_despacho --> cancelado : Admin cancela
+    rechazado_cartera --> [*]
+    entregado --> [*]
+    cancelado --> [*]
+```
+
+> **Nota:** Estos diagramas proporcionan una visión general que puedes usar como base para diagramas más detallados en documentación futura.
