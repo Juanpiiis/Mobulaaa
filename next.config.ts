@@ -1,16 +1,14 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  // 1. Marcar ambos paquetes como externos para que no intenten empaquetarlos mal
+  // 1. Marcar los paquetes como externos para evitar errores de empaquetado en Vercel
   serverExternalPackages: ['@react-pdf/renderer', 'pdfkit'],
 
-  // 2. Incluir explícitamente los archivos de fuentes en AMBAS rutas
+  // 2. Incluir explícitamente los archivos de fuentes en AMBAS rutas (raíz y anidada)
   outputFileTracingIncludes: {
     '/api/cotizacion/**': [
-      // Ruta raíz
       './node_modules/pdfkit/js/standard-fonts/*.cjs',
       './node_modules/pdfkit/js/data/*.afm',
-      // 🔥 RUTA ANIDADA (la que causaba el error)
       './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/standard-fonts/*.cjs',
       './node_modules/@react-pdf/renderer/node_modules/pdfkit/js/data/*.afm',
     ],
@@ -28,15 +26,29 @@ const nextConfig: NextConfig = {
     },
   },
 
-  // 🔥 ESTO ES LO QUE ARREGLA EL WEBVIEW
+  // 🔥 CABECERAS DE SEGURIDAD Y CORS PARA EL WEBVIEW Y PDFs
   async headers() {
     return [
       {
         source: '/(.*)',
         headers: [
           {
+            // CSP Actualizado: Permite blobs (para el PDF), iframes y conexiones a Supabase
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co;"
+            value: "default-src 'self' blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src 'self' blob:; font-src 'self' data:;"
+          },
+          {
+            // Permite que ngrok o cualquier proxy acceda sin problemas de CORS
+            key: 'Access-Control-Allow-Origin',
+            value: '*'
+          },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, PUT, DELETE, OPTIONS'
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'X-Requested-With, Content-Type, Authorization'
           }
         ]
       }
